@@ -1,0 +1,36 @@
+name: Daily signal generation
+
+on:
+  schedule:
+    # 12:30 UTC = 8:30 PM Singapore time (SGT, UTC+8).
+    - cron: "30 12 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run daily ingestion + signal generation
+        run: python backend/scripts/run_jobs.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DATA_PROVIDER: ${{ secrets.DATA_PROVIDER }}
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}

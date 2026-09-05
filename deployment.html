@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Free Cloud Deployment Guide — Swing Trading Picks</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #0b1220;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #10b981;
+    --accent-dim: #0d7a58;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --code-bg: #0b1220;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 0 16px 64px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  header { padding: 40px 0 24px; border-bottom: 1px solid var(--border); }
+  h1 { margin: 0 0 8px; font-size: 2rem; letter-spacing: -0.02em; }
+  h1 .badge { color: var(--accent); }
+  .subtitle { color: var(--muted); margin: 0; font-size: 1.05rem; }
+  h2 { margin-top: 40px; font-size: 1.35rem; color: var(--text); }
+  h3 { font-size: 1.1rem; margin-bottom: 4px; }
+  p { color: var(--text); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin: 16px 0;
+  }
+  .callout {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin: 16px 0;
+    color: #fcd34d;
+  }
+  .callout strong { color: #fbbf24; }
+
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+  td code, th code { color: #7dd3fc; }
+  tr:last-child td { border-bottom: none; }
+
+  .step {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+    margin: 20px 0;
+  }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--accent-dim); color: #fff; font-weight: 700;
+    margin-right: 10px; vertical-align: middle;
+  }
+  .step h3 { display: inline-block; margin: 0; vertical-align: middle; }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font: 13px/1.5 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    color: #cbd5e1;
+  }
+  pre code { color: #cbd5e1; }
+  code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.9em;
+    color: #7dd3fc;
+    background: rgba(125, 211, 252, 0.08);
+    padding: 1px 6px;
+    border-radius: 6px;
+  }
+  pre code { background: none; padding: 0; }
+
+  ol { padding-left: 20px; }
+  li { margin: 6px 0; }
+
+  .kv { display: grid; grid-template-columns: 1fr; gap: 6px; }
+  .kv-row { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px dashed var(--border); padding: 6px 0; }
+  .kv-row:last-child { border-bottom: none; }
+  .kv-row .k { color: var(--muted); }
+  .kv-row .v { text-align: right; word-break: break-all; }
+
+  footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+
+  @media (max-width: 600px) {
+    body { font-size: 15px; }
+    h1 { font-size: 1.6rem; }
+    .step, .panel { padding: 16px; }
+    table { font-size: 0.85rem; }
+    th, td { padding: 8px 6px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1><span class="badge">▲</span> Swing Trading Picks — Free Cloud Deployment</h1>
+  <p class="subtitle">A step-by-step guide to hosting the app for $0 using Vercel + Render + Neon + GitHub Actions.</p>
+</header>
+
+<section>
+  <h2>The free stack</h2>
+  <table>
+    <thead>
+      <tr><th>Piece</th><th>Service</th><th>Cost</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Frontend (Next.js)</td><td><strong>Vercel</strong></td><td>Free</td><td>Auto-deploys from GitHub</td></tr>
+      <tr><td>Backend (FastAPI)</td><td><strong>Render</strong></td><td>Free web service</td><td>Sleeps after ~15 min idle; wakes on request (~30–60 s cold start)</td></tr>
+      <tr><td>Database</td><td><strong>Neon</strong> (or Supabase)</td><td>Free Postgres</td><td>No expiry, generous limits</td></tr>
+      <tr><td>Daily 8:30 PM SGT pull</td><td><strong>GitHub Actions</strong></td><td>Free</td><td>Runs the cron even when the backend is asleep</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Why GitHub Actions for the schedule?</strong> Render's free tier sleeps the
+    backend when idle, so the built-in scheduler won't fire reliably. GitHub Actions runs
+    on its own schedule and writes directly to the shared Postgres database.
+  </div>
+</section>
+
+<section>
+  <h2>Step 0 — Prerequisites</h2>
+  <div class="panel">
+    <p>You need:</p>
+    <ul>
+      <li>A <a href="https://github.com" target="_blank">GitHub</a> account and <strong>git</strong> installed (<a href="https://git-scm.com" target="_blank">git-scm.com</a>).</li>
+      <li>Free accounts on <a href="https://vercel.com" target="_blank">Vercel</a>, <a href="https://render.com" target="_blank">Render</a>, and <a href="https://neon.tech" target="_blank">Neon</a> (no credit card needed).</li>
+      <li>Your <strong>Alpaca</strong> API keys.</li>
+    </ul>
+    <p class="muted">Push the project to GitHub first:</p>
+    <pre><code>cd "C:\Users\Spare Parts\Swing Trading Picks"
+git init
+git add .
+git commit -m "Initial commit"
+# create an empty repo on github.com, then:
+git remote add origin https://github.com/YOUR-USERNAME/swing-trading-picks.git
+git branch -M main
+git push -u origin main</code></pre>
+  </div>
+</section>
+
+<section>
+  <h2>Step 1 — Neon (free Postgres database)</h2>
+  <div class="panel">
+    <ol>
+      <li>Sign in at <a href="https://neon.tech" target="_blank">neon.tech</a> → <strong>Create project</strong>.</li>
+      <li>Copy the <strong>connection string</strong>. It looks like:<br/>
+        <code>postgresql://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require</code></li>
+      <li>Convert it for SQLAlchemy by inserting <code>+psycopg2</code>:<br/>
+        <code>postgresql+psycopg2://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require</code></li>
+    </ol>
+    <p class="muted">Keep this string — you'll set it as <code>DATABASE_URL</code> in two places (Render and GitHub).</p>
+  </div>
+</section>
+
+<section>
+  <h2>Step 2 — Render (backend)</h2>
+  <div class="panel">
+    <ol>
+      <li>Sign in at <a href="https://render.com" target="_blank">render.com</a> → <strong>New → Web Service</strong>.</li>
+      <li>Connect your GitHub repo.</li>
+      <li>Configure:
+        <ul>
+          <li><strong>Root Directory:</strong> <code>backend</code></li>
+          <li><strong>Runtime:</strong> <code>Docker</code> (auto-detects <code>backend/Dockerfile</code>)</li>
+          <li><strong>Instance Type:</strong> <code>Free</code></li>
+        </ul>
+      </li>
+      <li>Set environment variables:</li>
+    </ol>
+    <table>
+      <thead><tr><th>Key</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td><code>DATABASE_URL</code></td><td>your Neon <code>postgresql+psycopg2://…</code> string</td></tr>
+        <tr><td><code>SECRET_KEY</code></td><td>a long random string</td></tr>
+        <tr><td><code>DATA_PROVIDER</code></td><td><code>auto</code></td></tr>
+        <tr><td><code>DISABLE_SCHEDULER</code></td><td><code>true</code></td></tr>
+        <tr><td><code>ALPACA_API_KEY</code></td><td>your Alpaca key (or enter later in the app)</td></tr>
+        <tr><td><code>ALPACA_SECRET_KEY</code></td><td>your Alpaca secret</td></tr>
+        <tr><td><code>ALPACA_PAPER</code></td><td><code>true</code></td></tr>
+        <tr><td><code>CORS_ORIGINS</code></td><td><code>https://YOUR-APP.vercel.app</code></td></tr>
+      </tbody>
+    </table>
+    <ol start="5">
+      <li>Click <strong>Deploy</strong> (first build takes a few minutes).</li>
+      <li>Note the URL (e.g. <code>https://swing-api.onrender.com</code>) and test it at <code>/api/health</code>.</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <h2>Step 3 — Vercel (frontend)</h2>
+  <div class="panel">
+    <ol>
+      <li>Sign in at <a href="https://vercel.com" target="_blank">vercel.com</a> → <strong>Add New → Project</strong> → import the repo.</li>
+      <li>Configure:
+        <ul>
+          <li><strong>Root Directory:</strong> <code>frontend</code></li>
+          <li><strong>Framework:</strong> Next.js (auto-detected)</li>
+        </ul>
+      </li>
+      <li>Set environment variable:</li>
+    </ol>
+    <table>
+      <thead><tr><th>Key</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td><code>API_URL</code></td><td><code>https://swing-api.onrender.com</code> (your Render URL)</td></tr>
+      </tbody>
+    </table>
+    <ol start="4">
+      <li><strong>Deploy</strong>. Vercel gives you <code>https://YOUR-APP.vercel.app</code>.</li>
+      <li>Open it and sign in with <code>admin</code> / <code>changeme</code> (change these — see Step 5).</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <h2>Step 4 — GitHub Actions (daily 8:30 PM SGT pull)</h2>
+  <div class="panel">
+    <p>The workflow already exists at <code>.github/workflows/daily-cron.yml</code> (scheduled <code>30 12 * * *</code> UTC = 8:30 PM Singapore time).</p>
+    <p>Add these <strong>repository secrets</strong> (GitHub → Settings → Secrets and variables → Actions):</p>
+    <table>
+      <thead><tr><th>Secret</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td><code>DATABASE_URL</code></td><td>your Neon connection string</td></tr>
+        <tr><td><code>SECRET_KEY</code></td><td>the <strong>same</strong> secret you set on Render</td></tr>
+        <tr><td><code>ALPACA_API_KEY</code></td><td>your Alpaca key</td></tr>
+        <tr><td><code>ALPACA_SECRET_KEY</code></td><td>your Alpaca secret</td></tr>
+        <tr><td><code>DATA_PROVIDER</code></td><td><code>auto</code> (optional)</td></tr>
+      </tbody>
+    </table>
+    <p>Then run it once manually (<strong>Actions → Daily signal generation → Run workflow</strong>) to verify signals appear in the app.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Step 5 — Change the default admin password</h2>
+  <div class="panel">
+    <p>Set these on <strong>Render</strong> (backend) and restart:</p>
+    <table>
+      <thead><tr><th>Key</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td><code>ADMIN_USERNAME</code></td><td>your username</td></tr>
+        <tr><td><code>ADMIN_PASSWORD</code></td><td>a strong password</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Caveats &amp; tips</h2>
+  <div class="panel">
+    <ul>
+      <li><strong>Cold start:</strong> Render free sleeps after ~15 min idle; the first request wakes it (30–60 s).</li>
+      <li><strong>Both schedulers:</strong> keep <code>DISABLE_SCHEDULER=true</code> on Render so it doesn't fight GitHub Actions.</li>
+      <li><strong>Options data:</strong> put-option <em>contract</em> recommendations need an Alpaca options subscription or a Polygon.io key; without them, bearish setups still appear with underlying levels.</li>
+      <li><strong>Public repo warning:</strong> never commit <code>.env</code> or real secrets. Keys entered via the app's Settings UI are stored encrypted in the database.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Swing Trading Picks · Free deployment guide · For educational purposes only, not financial advice.
+</footer>
+
+</div>
+</body>
+</html>

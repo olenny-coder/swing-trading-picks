@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100 antialiased;
+}
+
+/* Prevent horizontal scrolling on small screens. */
+html,
+body {
+  overflow-x: hidden;
+}
+
+/* Touch-friendly tap targets. */
+button,
+a,
+input,
+select {
+  @apply outline-none;
+}

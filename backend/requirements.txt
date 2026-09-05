@@ -1,0 +1,35 @@
+# FastAPI web framework
+fastapi>=0.115,<1.0
+uvicorn>=0.30
+pydantic>=2.7,<3.0
+pydantic-settings>=2.2
+
+# Database
+SQLAlchemy>=2.0,<3.0
+# PostgreSQL driver (used in production; optional for the SQLite demo mode)
+psycopg2-binary>=2.9
+
+# Security
+cryptography>=42.0
+bcrypt>=4.0
+PyJWT>=2.8
+
+# HTTP client (Alpaca / provider adapters)
+httpx>=0.27
+python-multipart>=0.0.9
+
+# Numeric / analytics
+numpy>=1.26
+pandas>=2.2
+
+# Scheduler
+APScheduler>=3.10,<4.0
+
+# Tests
+pytest>=8.0
+pytest-asyncio>=0.23
+
+# NOTE: `alpaca-py` is the official SDK and can be swapped in for the bundled
+# httpx-based Alpaca client (see backend/app/providers/alpaca_provider.py).
+# It is intentionally not a hard dependency so the app installs cleanly and
+# the MOCK demo mode works without network access.

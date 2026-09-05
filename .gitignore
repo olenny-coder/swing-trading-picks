@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Data / secrets
+.env
+.env.local
+*.db
+*.db-journal
+*.sqlite3
+secrets/
+*.pem
+*.key
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.vercel
+.turbo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Portable toolchain (Node + git) downloaded for this environment — keep fetchers
+.tools/*
+!.tools/fetch_node.py
+!.tools/fetch_git.py
+
+# Backtest JSON dumps (the human-readable .md report is kept as a deliverable)
+reports/*.json
+*.html.bak
