@@ -49,3 +49,7 @@ Thumbs.db
 # Backtest JSON dumps (the human-readable .md report is kept as a deliverable)
 reports/*.json
 *.html.bak
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
