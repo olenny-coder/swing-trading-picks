@@ -28,7 +28,7 @@ function EventFlags({ signal }: { signal: SignalOut }) {
 }
 
 function EntryCell({ signal }: { signal: SignalOut }) {
-  if (signal.type === "PUT" && signal.option_recommendation) {
+  if (signal.type === "SELL" && signal.option_recommendation) {
     const o = signal.option_recommendation;
     return (
       <div>

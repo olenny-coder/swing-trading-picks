@@ -6,7 +6,7 @@ regime are all synthesized from a stable per-ticker random seed, so every run
 produces the same series. This is both the demo mode and the test fixture.
 
 The generators intentionally engineer a handful of "hero" tickers per signal
-type so the daily view reliably shows BUY_STANDARD, BUY_DOJI_REVERSAL and PUT
+type so the daily view reliably shows BUY_STANDARD, BUY_DOJI_REVERSAL and SELL
 signals out of the box.
 """
 from __future__ import annotations

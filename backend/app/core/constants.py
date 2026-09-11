@@ -3,8 +3,12 @@ from __future__ import annotations
 
 SIGNAL_BUY_STANDARD = "BUY_STANDARD"
 SIGNAL_BUY_DOJI_REVERSAL = "BUY_DOJI_REVERSAL"
-SIGNAL_PUT = "PUT"
-SIGNAL_TYPES = (SIGNAL_BUY_STANDARD, SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_PUT)
+SIGNAL_SELL = "SELL"  # bearish signal, executed by buying put options
+# Backwards-compatible alias (older data/code referenced "PUT").
+SIGNAL_PUT = SIGNAL_SELL
+SIGNAL_TYPES = (SIGNAL_BUY_STANDARD, SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_SELL)
+# Signal-type values used before the PUT -> SELL rename (for DB migration).
+LEGACY_SIGNAL_PUT = "PUT"
 
 CONFIDENCE_LOW = "Low"
 CONFIDENCE_MEDIUM = "Medium"

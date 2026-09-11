@@ -114,7 +114,7 @@ class SignalListResponse(BaseModel):
 
 class SummaryResponse(BaseModel):
     total_buys: int
-    total_puts: int
+    total_sells: int
     total_doji: int
     avg_confidence: float
     high_confidence_count: int
@@ -211,7 +211,7 @@ class SignalDetailOut(BaseModel):
 # Backtesting
 # ---------------------------------------------------------------------------
 class BacktestRequest(BaseModel):
-    strategy: str = "all"  # BUY_STANDARD | BUY_DOJI_REVERSAL | PUT | all
+    strategy: str = "all"  # BUY_STANDARD | BUY_DOJI_REVERSAL | SELL | all
     start_date: date | None = None
     end_date: date | None = None
     tickers: list[str] | None = None

@@ -4,7 +4,7 @@ import { confidenceLabel } from "@/lib/format";
 const TYPE_STYLES: Record<SignalType, { label: string; cls: string }> = {
   BUY_STANDARD: { label: "BUY", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
   BUY_DOJI_REVERSAL: { label: "DOJI", cls: "bg-violet-500/15 text-violet-300 border-violet-500/30" },
-  PUT: { label: "PUT", cls: "bg-red-500/15 text-red-300 border-red-500/30" },
+  SELL: { label: "SELL", cls: "bg-red-500/15 text-red-300 border-red-500/30" },
 };
 
 export function TypeBadge({ type }: { type: SignalType }) {

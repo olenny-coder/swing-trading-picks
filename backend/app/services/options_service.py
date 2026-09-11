@@ -1,4 +1,4 @@
-"""Options recommendation for bearish (PUT) signals.
+"""Options recommendation for SELL (bearish) signals.
 
 Finds the most liquid near-the-money put, applies the liquidity filter
 (open interest > 100, bid/ask spread < 5%), and derives option-level

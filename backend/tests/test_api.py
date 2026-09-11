@@ -100,10 +100,10 @@ class TestAPI(unittest.TestCase):
 
     def test_signals_filter_by_type(self):
         h = self._auth_headers()
-        resp = self.client.get("/api/signals", params={"type": "PUT"}, headers=h)
+        resp = self.client.get("/api/signals", params={"type": "SELL"}, headers=h)
         self.assertEqual(resp.status_code, 200)
         for s in resp.json()["signals"]:
-            self.assertEqual(s["type"], "PUT")
+            self.assertEqual(s["type"], "SELL")
 
     def test_macro_dashboard(self):
         h = self._auth_headers()

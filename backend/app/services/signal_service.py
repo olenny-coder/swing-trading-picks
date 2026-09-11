@@ -10,7 +10,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..core.constants import SIGNAL_PUT, SIGNAL_TYPES
+from ..core.constants import SIGNAL_SELL, SIGNAL_TYPES
 from ..core.signal_engine import MIN_BARS, analyze_ticker
 from ..models import BacktestRun, Signal
 from ..providers.base import MacroDataProvider, MarketDataProvider
@@ -57,7 +57,7 @@ def generate_signals(
     # Idempotent: replace today's signals.
     db.query(Signal).filter(Signal.date == signal_date).delete(synchronize_session=False)
 
-    counts = {"BUY_STANDARD": 0, "BUY_DOJI_REVERSAL": 0, "PUT": 0, "total": 0}
+    counts = {"BUY_STANDARD": 0, "BUY_DOJI_REVERSAL": 0, "SELL": 0, "total": 0}
     for meta in universe:
         bars = load_bars(db, meta.ticker, start, signal_date)
         if len(bars) < MIN_BARS:
@@ -66,7 +66,7 @@ def generate_signals(
         drafts = analyze_ticker(meta.ticker, meta.name, meta.sector, bars, ctx)
         for d in drafts:
             option_rec = None
-            if d.type == SIGNAL_PUT:
+            if d.type == SIGNAL_SELL:
                 option_rec = recommend_put(market_provider, d.ticker, d.price, d.target, d.stop)
                 if option_rec is not None:
                     d.event_flags["options_liquid"] = True

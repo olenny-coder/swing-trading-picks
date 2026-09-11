@@ -24,7 +24,7 @@ export function SummaryCards({ summary }: { summary: Summary | null }) {
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <Card label="Buy Signals" value={String(n(summary.total_buys))} accent="text-emerald-400" />
       <Card label="Doji Reversals" value={String(n(summary.total_doji))} accent="text-violet-400" />
-      <Card label="Put Signals" value={String(n(summary.total_puts))} accent="text-red-400" />
+      <Card label="Sell Signals" value={String(n(summary.total_sells))} accent="text-red-400" />
       <Card label="Avg Confidence" value={formatPct(n(summary.avg_confidence))} />
       <Card label="Regime" value={summary.regime ?? "—"} accent={regimeColor} />
       <Card label="VIX" value={summary.vix ? formatPrice(summary.vix) : "—"} />

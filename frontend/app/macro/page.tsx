@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import type { MacroDashboard } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
 import { EarningsList, MacroEventList, SectorHeatmap } from "@/components/MacroWidgets";
+import { Collapsible } from "@/components/Collapsible";
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
@@ -52,18 +53,15 @@ export default function MacroPage() {
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <h3 className="mb-3 text-sm font-semibold">Sector Relative Strength</h3>
+        <Collapsible title="Sector Relative Strength" subtitle="20-day change">
           <SectorHeatmap data={data.sector_heatmap} />
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <h3 className="mb-3 text-sm font-semibold">Economic Calendar</h3>
+        </Collapsible>
+        <Collapsible title="Economic Calendar" subtitle="sentiment impact">
           <MacroEventList events={data.macro_events} />
-        </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <h3 className="mb-3 text-sm font-semibold">Upcoming Earnings</h3>
+        </Collapsible>
+        <Collapsible title="Upcoming Earnings" subtitle={`${data.earnings.length}`}>
           <EarningsList earnings={data.earnings} />
-        </div>
+        </Collapsible>
       </div>
     </div>
   );

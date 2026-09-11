@@ -7,7 +7,7 @@ Pure, deterministic, and independent of the database or any concrete provider:
 Signal types:
 - BUY_STANDARD      — trend/momentum breakout.
 - BUY_DOJI_REVERSAL — doji after a downtrend, confirmed by a bullish reversal.
-- PUT               — bearish breakdown (traded via put options, never shorting).
+- SELL              — bearish breakdown (executed by buying put options).
 """
 from __future__ import annotations
 
@@ -15,13 +15,13 @@ from dataclasses import dataclass, field
 
 from . import confidence, indicators as ta
 from .base_types import SignalContext
-from .constants import SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_BUY_STANDARD, SIGNAL_PUT
+from .constants import SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_BUY_STANDARD, SIGNAL_SELL
 from .regime import is_rate_sensitive
 
 DEFAULT_BACKTEST_WIN_RATES = {
     SIGNAL_BUY_STANDARD: 0.58,
     SIGNAL_BUY_DOJI_REVERSAL: 0.55,
-    SIGNAL_PUT: 0.52,
+    SIGNAL_SELL: 0.52,
 }
 
 MIN_BARS = 60
@@ -106,13 +106,13 @@ def analyze_ticker(
     if doji is not None:
         drafts.append(doji)
 
-    # --- PUT -----------------------------------------------------------------
-    put = _evaluate_put(
+    # --- SELL (bearish) ------------------------------------------------------
+    sell = _evaluate_sell(
         ticker, name, sector, closes, highs, lows, opens, volumes,
         ema20, ema50, macd_line, signal_line, hist, rsi14, atr, avg_vol, last, ctx,
     )
-    if put is not None:
-        drafts.append(put)
+    if sell is not None:
+        drafts.append(sell)
 
     return drafts
 
@@ -121,7 +121,7 @@ def analyze_ticker(
 # Common helpers
 # ---------------------------------------------------------------------------
 def _regime_subscore(signal_type: str, regime: str) -> float:
-    if signal_type == SIGNAL_PUT:
+    if signal_type == SIGNAL_SELL:
         return 90.0 if regime == "bearish" else (70.0 if regime == "neutral" else 30.0)
     return 90.0 if regime == "bullish" else (70.0 if regime == "neutral" else 30.0)
 
@@ -129,7 +129,7 @@ def _regime_subscore(signal_type: str, regime: str) -> float:
 def _sector_subscore(signal_type: str, sector: str | None, ctx: SignalContext) -> float:
     if not sector:
         return 60.0
-    if signal_type == SIGNAL_PUT:
+    if signal_type == SIGNAL_SELL:
         if sector in ctx.lagging_sectors:
             return 85.0
         if sector in ctx.leading_sectors:
@@ -335,9 +335,9 @@ def _evaluate_doji(
 
 
 # ---------------------------------------------------------------------------
-# PUT
+# SELL (bearish; executed by buying put options)
 # ---------------------------------------------------------------------------
-def _evaluate_put(
+def _evaluate_sell(
     ticker, name, sector, closes, highs, lows, opens, volumes,
     ema20, ema50, macd_line, signal_line, hist, rsi14, atr, avg_vol, last, ctx,
 ) -> SignalDraft | None:
@@ -378,6 +378,6 @@ def _evaluate_put(
 
     triggered = [k for k, v in conditions.items() if v]
     return _finish(
-        ticker, name, sector, SIGNAL_PUT, entry, target, stop,
+        ticker, name, sector, SIGNAL_SELL, entry, target, stop,
         c, volumes[last], technical, volume_ratio, triggered, ctx,
     )

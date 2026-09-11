@@ -63,11 +63,17 @@ def _migrate() -> None:
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
-    if "macro_events" not in insp.get_table_names():
-        return
-    cols = {c["name"] for c in insp.get_columns("macro_events")}
-    if "sentiment" not in cols:
+    tables = set(insp.get_table_names())
+
+    if "macro_events" in tables:
+        cols = {c["name"] for c in insp.get_columns("macro_events")}
+        if "sentiment" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE macro_events ADD COLUMN sentiment VARCHAR(16) DEFAULT 'neutral'")
+                )
+
+    if "signals" in tables:
+        # Rename the legacy PUT signal type to SELL.
         with engine.begin() as conn:
-            conn.execute(
-                text("ALTER TABLE macro_events ADD COLUMN sentiment VARCHAR(16) DEFAULT 'neutral'")
-            )
+            conn.execute(text("UPDATE signals SET type = 'SELL' WHERE type = 'PUT'"))

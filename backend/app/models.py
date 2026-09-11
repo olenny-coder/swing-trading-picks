@@ -24,13 +24,20 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .core.constants import SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_BUY_STANDARD, SIGNAL_PUT, SIGNAL_TYPES
+from .core.constants import (
+    SIGNAL_BUY_DOJI_REVERSAL,
+    SIGNAL_BUY_STANDARD,
+    SIGNAL_PUT,
+    SIGNAL_SELL,
+    SIGNAL_TYPES,
+)
 from .database import Base
 
 # Re-export signal type constants (single source of truth: app.core.constants).
 __all__ = [
     "SIGNAL_BUY_STANDARD",
     "SIGNAL_BUY_DOJI_REVERSAL",
+    "SIGNAL_SELL",
     "SIGNAL_PUT",
     "SIGNAL_TYPES",
 ]

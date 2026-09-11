@@ -1,6 +1,6 @@
 // Shared types mirroring the backend Pydantic schemas.
 
-export type SignalType = "BUY_STANDARD" | "BUY_DOJI_REVERSAL" | "PUT";
+export type SignalType = "BUY_STANDARD" | "BUY_DOJI_REVERSAL" | "SELL";
 
 export interface SignalOut {
   id: number;
@@ -40,7 +40,7 @@ export interface OptionRecommendation {
 
 export interface Summary {
   total_buys: number;
-  total_puts: number;
+  total_sells: number;
   total_doji: number;
   avg_confidence: number;
   high_confidence_count: number;

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..core import indicators as ta
-from ..core.constants import SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_BUY_STANDARD, SIGNAL_PUT
+from ..core.constants import SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_BUY_STANDARD, SIGNAL_SELL
 from ..database import get_db
 from ..models import DailyBar, EarningsEvent, MacroEvent, MacroSnapshot, Signal, User
 from ..providers.registry import resolve_market_provider
@@ -78,7 +78,7 @@ def _diverse_shortlist(signals: list[Signal], limit: int) -> list[Signal]:
 def _summary(db: Session, signals: list[Signal]) -> SummaryResponse:
     total_buys = sum(1 for s in signals if s.type == SIGNAL_BUY_STANDARD)
     total_doji = sum(1 for s in signals if s.type == SIGNAL_BUY_DOJI_REVERSAL)
-    total_puts = sum(1 for s in signals if s.type == SIGNAL_PUT)
+    total_sells = sum(1 for s in signals if s.type == SIGNAL_SELL)
     avg_conf = round(sum(s.confidence for s in signals) / len(signals), 1) if signals else 0.0
     high_count = sum(1 for s in signals if s.confidence >= 71)
 
@@ -93,7 +93,7 @@ def _summary(db: Session, signals: list[Signal]) -> SummaryResponse:
 
     return SummaryResponse(
         total_buys=total_buys,
-        total_puts=total_puts,
+        total_sells=total_sells,
         total_doji=total_doji,
         avg_confidence=avg_conf,
         high_confidence_count=high_count,
@@ -210,7 +210,7 @@ def signal_detail(
         doji_highlight = ta.is_doji(last2.open, last2.high, last2.low, last2.close)
 
     option_chain: list[OptionContractOut] = []
-    if sig.type == SIGNAL_PUT:
+    if sig.type == SIGNAL_SELL:
         # Public read: use the primary (admin) user's credentials, falling back
         # to environment variables, so visitors still get the options chain.
         primary = db.query(User).order_by(User.id.asc()).first()

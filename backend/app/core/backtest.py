@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from .base_types import SignalContext
+from .constants import SIGNAL_SELL
 from .signal_engine import MIN_BARS, SignalDraft, analyze_ticker
 
 
@@ -40,28 +41,28 @@ def simulate_trade(draft: SignalDraft, bars: list, signal_index: int, holding_da
     entry_bar = bars[signal_index + 1]
     entry = entry_bar.open or entry_bar.close
 
-    is_put = draft.type == "PUT"
+    is_sell = draft.type == SIGNAL_SELL
     target, stop = draft.target, draft.stop
 
     for j in range(signal_index + 1, min(signal_index + 1 + holding_days, len(bars))):
         b = bars[j]
-        if is_put:
+        if is_sell:
             if b.low <= target:
-                return _result(draft, entry, target, b.date, j - signal_index, True, False, is_put)
+                return _result(draft, entry, target, b.date, j - signal_index, True, False, is_sell)
             if b.high >= stop:
-                return _result(draft, entry, stop, b.date, j - signal_index, False, True, is_put)
+                return _result(draft, entry, stop, b.date, j - signal_index, False, True, is_sell)
         else:
             if b.low <= stop:
-                return _result(draft, entry, stop, b.date, j - signal_index, False, True, is_put)
+                return _result(draft, entry, stop, b.date, j - signal_index, False, True, is_sell)
             if b.high >= target:
-                return _result(draft, entry, target, b.date, j - signal_index, True, False, is_put)
+                return _result(draft, entry, target, b.date, j - signal_index, True, False, is_sell)
 
     last = bars[min(signal_index + holding_days, len(bars) - 1)]
-    return _result(draft, entry, last.close, last.date, holding_days, False, False, is_put)
+    return _result(draft, entry, last.close, last.date, holding_days, False, False, is_sell)
 
 
-def _result(draft, entry, exit_, exit_date, holding, hit_target, hit_stop, is_put) -> TradeResult:
-    pnl = (entry - exit_) / entry if is_put else (exit_ - entry) / entry
+def _result(draft, entry, exit_, exit_date, holding, hit_target, hit_stop, is_sell) -> TradeResult:
+    pnl = (entry - exit_) / entry if is_sell else (exit_ - entry) / entry
     return TradeResult(
         ticker=draft.ticker,
         signal_date=date.min,  # overwritten by the caller with the signal bar date

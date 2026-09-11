@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version="1.0.0",
-    description="Swing trading signals (BUY_STANDARD, BUY_DOJI_REVERSAL, PUT) "
+    description="Swing trading signals (BUY_STANDARD, BUY_DOJI_REVERSAL, SELL) "
     "for liquid US equities, with macro/earnings filtering and API-key management.",
     lifespan=lifespan,
 )

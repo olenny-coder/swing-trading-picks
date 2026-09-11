@@ -10,6 +10,7 @@ import { SignalCard } from "@/components/SignalCard";
 import { EMPTY_FILTERS, Filters, type FilterState } from "@/components/Filters";
 import { EarningsList, MacroEventList, SectorHeatmap } from "@/components/MacroWidgets";
 import { RefreshButton } from "@/components/RefreshButton";
+import { Collapsible } from "@/components/Collapsible";
 
 export default function HomePage() {
   const { token } = useAuth();
@@ -109,18 +110,20 @@ export default function HomePage() {
       )}
 
       {macro && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <h3 className="mb-3 text-sm font-semibold">Upcoming Macro Events</h3>
-            <MacroEventList events={macro.macro_events} />
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <h3 className="mb-3 text-sm font-semibold">Upcoming Earnings</h3>
-            <EarningsList earnings={macro.earnings} />
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <h3 className="mb-3 text-sm font-semibold">Sector Heatmap</h3>
-            <SectorHeatmap data={macro.sector_heatmap} />
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+            Macro &amp; Events
+          </h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <Collapsible title="Upcoming Macro Events" subtitle={`${macro.macro_events.length}`}>
+              <MacroEventList events={macro.macro_events} />
+            </Collapsible>
+            <Collapsible title="Upcoming Earnings" subtitle={`${macro.earnings.length}`}>
+              <EarningsList earnings={macro.earnings} />
+            </Collapsible>
+            <Collapsible title="Sector Heatmap" subtitle="relative strength">
+              <SectorHeatmap data={macro.sector_heatmap} />
+            </Collapsible>
           </div>
         </div>
       )}

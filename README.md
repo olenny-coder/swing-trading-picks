@@ -11,7 +11,7 @@ A production-ready swing-trading signal application for **US equities**. It gene
 - **Three signal types**
   - `BUY_STANDARD` — trend/momentum breakout above the 20-day high.
   - `BUY_DOJI_REVERSAL` — doji after a downtrend, confirmed by a bullish reversal bar.
-  - `PUT` — bearish breakdown, traded via **liquid put options** (never shorting).
+  - `SELL` — bearish breakdown, traded via **liquid put options** (never shorting).
 - **Confidence scoring** — weighted sum of technical confluence (40%), backtest performance (20%), regime alignment (15%), sector strength (10%), volume (5%), and macro/earnings risk (10%), labeled Low/Medium/High.
 - **Macro & event filtering** — market regime (SPY vs 200-day MA, VIX, yield curve), sector rotation, interest-rate sensitivity, earnings-proximity suppression, and high-impact-event confidence adjustment.
 - **API key management** — enter/update Alpaca (paper/live) and optional Finnhub/Polygon/FRED keys from the UI; keys are **encrypted at rest** (Fernet), **masked** in the UI, never sent to the browser, and fall back to environment variables.
@@ -19,6 +19,7 @@ A production-ready swing-trading signal application for **US equities**. It gene
 - **Backtesting** — event-aware replay with win rate, avg return, max drawdown, profit factor, Sharpe, and walk-forward-capable CLI.
 - **Scheduling** — APScheduler daily jobs (ingestion, macro, signal generation), plus a GitHub Actions cron entrypoint.
 - **Public read / admin control** — the daily view, history, macro dashboard, and charts are **readable without logging in**; only the admin (signed-in) can refresh data or change API keys/settings.
+- **Collapsible sections & hamburger nav** — every major section can be expanded/collapsed, the header carries a hamburger menu at all screen sizes, and each signal page ends with a **"How confidence was derived"** breakdown showing the weighted sub-score math.
 
 ---
 
@@ -128,7 +129,7 @@ POLYGON_API_KEY=...   # alternative bars / options chain
 
 ## Signal engine reference
 
-| Criterion | BUY_STANDARD | BUY_DOJI_REVERSAL | PUT |
+| Criterion | BUY_STANDARD | BUY_DOJI_REVERSAL | SELL |
 |---|---|---|---|
 | Trend | price > EMA50, EMA20 > EMA50 | doji after downtrend (price < EMA20) | price < EMA50, EMA20 < EMA50 |
 | Momentum | MACD bullish cross ≤3 bars | bullish confirmation bar | MACD bearish cross ≤3 bars |

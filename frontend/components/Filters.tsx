@@ -76,7 +76,7 @@ export function Filters({
             <option value="">All</option>
             <option value="BUY_STANDARD">Buy (Standard)</option>
             <option value="BUY_DOJI_REVERSAL">Doji Reversal</option>
-            <option value="PUT">Put</option>
+            <option value="SELL">Sell</option>
           </select>
         </label>
         <label className="block">
