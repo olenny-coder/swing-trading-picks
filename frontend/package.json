@@ -2,11 +2,39 @@
   "name": "swing-trading-picks-frontend",
   "version": "1.0.0",
   "private": true,
+  "description": "Responsive Next.js dashboard for Swing Trading Picks — daily swing-trading signals (breakout, doji reversal, and sell/put setups) with confidence scoring, macro & earnings filters, and interactive charts.",
+  "keywords": [
+    "swing-trading",
+    "trading-signals",
+    "stock-screener",
+    "technical-analysis",
+    "doji-reversal",
+    "breakout",
+    "put-options",
+    "alpaca",
+    "nextjs",
+    "react",
+    "tailwindcss",
+    "lightweight-charts",
+    "fintech",
+    "quant"
+  ],
+  "homepage": "https://github.com/olenny-coder/swing-trading-picks#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/olenny-coder/swing-trading-picks.git"
+  },
+  "bugs": {
+    "url": "https://github.com/olenny-coder/swing-trading-picks/issues"
+  },
+  "author": "olenny-coder",
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "lightweight-charts": "^4.2.0",

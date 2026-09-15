@@ -1,6 +1,14 @@
 # Swing Trading Picks
 
-A production-ready swing-trading signal application for **US equities**. It generates daily **buy signals** (trend/momentum breakout and **doji reversal**) and **put-option recommendations**, each with an entry price, target, stop-loss, and a 0–100 confidence rating. Signals are filtered by **macroeconomic developments** and the **earnings calendar**, and the whole app is **fully responsive** (desktop + mobile).
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
+[![Tests](https://img.shields.io/badge/tests-33%20passing-brightgreen.svg)](backend/tests)
+
+> **Topics:** `swing-trading` · `trading-signals` · `stock-screener` · `technical-analysis` · `doji-reversal` · `breakout` · `put-options` · `alpaca` · `fastapi` · `nextjs` · `tailwindcss` · `lightweight-charts` · `backtesting` · `fintech` · `quant`
+
+A production-ready swing-trading signal application for **US equities**. It generates daily **buy signals** (trend/momentum breakout and **doji reversal**) and **sell signals with put-option recommendations**, each with an entry price, target, stop-loss, and a 0–100 confidence rating. Signals are filtered by **macroeconomic developments** and the **earnings calendar**, and the whole app is **fully responsive** (desktop + mobile).
 
 > **Zero-config demo:** the app ships with a deterministic *mock* data provider, so it runs end-to-end (dashboard, charts, settings, backtesting) with **no API keys**. Add your **Alpaca** credentials to switch to live/paper market data.
 
@@ -229,6 +237,14 @@ See `.env.example` for the full list. Key variables: `SECRET_KEY`, `DATABASE_URL
 - API keys are Fernet-encrypted at rest (key derived from `SECRET_KEY`) and never serialized to the frontend; responses carry masked values only.
 - Passwords are bcrypt-hashed; authentication uses short-lived JWT bearer tokens.
 - Use HTTPS in production, a strong `SECRET_KEY`, and change the default admin password.
+
+---
+
+## License
+
+Released under the **[MIT License](LICENSE)** — free to use, modify, and distribute, provided the copyright notice and permission notice are retained.
+
+> **Why MIT?** It's the simplest permissive license and the norm for tools like this. If you plan to accept corporate contributions or want an explicit patent grant, **[Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)** is the better alternative (it adds a patent grant and trademark clause). Avoid GPL here unless you want to force derivatives to stay open.
 
 ## Disclaimer
 

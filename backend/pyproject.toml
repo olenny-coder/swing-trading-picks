@@ -1,0 +1,64 @@
+[project]
+name = "swing-trading-picks"
+version = "1.0.0"
+description = "Swing-trading signal engine for US equities: BUY_STANDARD, BUY_DOJI_REVERSAL and SELL (put-option) signals with weighted confidence scoring, macro/earnings event filtering, encrypted API-key management, and backtesting."
+readme = { text = "Swing-trading signal engine for US equities. See the repository README for full documentation.", content-type = "text/markdown" }
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "olenny-coder" }]
+keywords = [
+    "swing-trading",
+    "trading-signals",
+    "stock-screener",
+    "technical-analysis",
+    "doji",
+    "doji-reversal",
+    "momentum",
+    "breakout",
+    "put-options",
+    "options",
+    "alpaca",
+    "fastapi",
+    "backtesting",
+    "quantitative-finance",
+    "fintech",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+# Runtime dependencies mirror backend/requirements.txt (used by the Docker build).
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn>=0.30",
+    "pydantic>=2.7,<3.0",
+    "pydantic-settings>=2.2",
+    "SQLAlchemy>=2.0,<3.0",
+    "psycopg2-binary>=2.9",
+    "cryptography>=42.0",
+    "bcrypt>=4.0",
+    "PyJWT>=2.8",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "APScheduler>=3.10,<4.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Homepage = "https://github.com/olenny-coder/swing-trading-picks"
+Repository = "https://github.com/olenny-coder/swing-trading-picks"
+Issues = "https://github.com/olenny-coder/swing-trading-picks/issues"
+Documentation = "https://github.com/olenny-coder/swing-trading-picks/blob/main/README.md"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
