@@ -111,11 +111,108 @@ class TestSmaStrategy(unittest.TestCase):
     def test_flat_series_produces_no_signal(self):
         self.assertEqual(_run([0.0] * 90), [])
 
-    def test_confidence_components_present(self):
-        drafts = _run(UC1_SERIES)
-        self.assertTrue(drafts)
-        keys = {"technical", "backtest", "regime", "sector", "volume", "macro"}
-        self.assertTrue(keys.issubset(set(drafts[0].confidence_components.keys())))
+    def test_confidence_is_a_blend_of_continuation_and_reversal(self):
+        d = _run(UC1_SERIES)[0]
+        c = d.confidence_components
+        expected_keys = {
+            "continuation",
+            "reversal",
+            "continuation_weight",
+            "reversal_weight",
+            "blend",
+            "regime_adjustment",
+            "sector_adjustment",
+            "counter_impact",
+            "final",
+        }
+        self.assertTrue(expected_keys.issubset(set(c.keys())), sorted(c.keys()))
+
+        # The blend is the weighted mix of the two factor groups...
+        expected_blend = (
+            c["continuation"] * c["continuation_weight"] / 100.0
+            + c["reversal"] * c["reversal_weight"] / 100.0
+        )
+        self.assertAlmostEqual(c["blend"], expected_blend, places=1)
+
+        # ...and the final score is that blend plus the context adjustments.
+        expected_final = max(
+            0.0,
+            min(
+                100.0,
+                c["blend"] + c["regime_adjustment"] + c["sector_adjustment"] + c["counter_impact"],
+            ),
+        )
+        self.assertAlmostEqual(c["final"], expected_final, places=1)
+        self.assertEqual(d.confidence, c["final"])
+
+    def test_individual_factors_are_reported(self):
+        c = _run(UC1_SERIES)[0].confidence_components
+        for factor in ("trend_separation", "ma_alignment", "trigger_strength", "reversal_trigger"):
+            self.assertIn(f"factor_{factor}", c)
+            self.assertGreaterEqual(c[f"factor_{factor}"], 0.0)
+            self.assertLessEqual(c[f"factor_{factor}"], 100.0)
+
+    def test_family_weights_favour_the_setups_own_family(self):
+        from app.core.sma_strategy import FAMILY_WEIGHTS
+
+        for setup in ("UC1", "UC2", "DC1", "DC2"):
+            cont, rev = FAMILY_WEIGHTS[setup]
+            self.assertGreater(cont, rev, f"{setup} should favour continuation evidence")
+        for setup in ("UR1", "DR1", "UR2", "DR2"):
+            cont, rev = FAMILY_WEIGHTS[setup]
+            self.assertLess(cont, rev, f"{setup} should favour reversal evidence")
+
+    def test_opposing_macro_sentiment_lowers_confidence(self):
+        bars = _bars(UC1_SERIES)
+        supportive = analyze_ticker(
+            "TEST", "Test Co", "Technology", bars,
+            SignalContext(regime="bullish", macro_sentiment=0.8),
+        )
+        opposed = analyze_ticker(
+            "TEST", "Test Co", "Technology", bars,
+            SignalContext(regime="bearish", macro_sentiment=-0.8),
+        )
+        self.assertTrue(supportive, "expected a signal with a supportive backdrop")
+        self.assertTrue(opposed, "expected a signal with an opposing backdrop")
+        self.assertGreater(supportive[0].confidence, opposed[0].confidence)
+        self.assertLess(opposed[0].confidence_components["counter_impact"], 0.0)
+        self.assertGreater(supportive[0].confidence_components["counter_impact"], 0.0)
+
+    def test_counter_impact_direction_follows_the_trade(self):
+        from app.core.constants import SIGNAL_BUY, SIGNAL_SELL
+        from app.core.sma_strategy import _counter_impact
+
+        negative_calendar = SignalContext(macro_sentiment=-0.8)
+        # A weak calendar argues against a long and supports a short.
+        self.assertLess(_counter_impact(SIGNAL_BUY, "Technology", negative_calendar), 0.0)
+        self.assertGreater(_counter_impact(SIGNAL_SELL, "Technology", negative_calendar), 0.0)
+
+    def test_counter_impact_is_bounded(self):
+        from app.core.constants import SIGNAL_BUY
+        from app.core.sma_strategy import COUNTER_IMPACT_MAX, COUNTER_IMPACT_MIN, _counter_impact
+
+        worst = SignalContext(
+            macro_sentiment=-1.0,
+            high_impact_events_within_2d=True,
+            rate_rising_sharply=True,
+            earnings_in_days=2,
+        )
+        value = _counter_impact(SIGNAL_BUY, "Real Estate", worst)
+        self.assertGreaterEqual(value, COUNTER_IMPACT_MIN)
+        self.assertLessEqual(value, COUNTER_IMPACT_MAX)
+
+    def test_counter_drivers_explain_the_impact(self):
+        from app.core.constants import SIGNAL_BUY
+        from app.core.sma_strategy import _counter_drivers
+
+        ctx = SignalContext(
+            macro_sentiment=-0.5, high_impact_events_within_2d=True, earnings_in_days=3
+        )
+        drivers = _counter_drivers(SIGNAL_BUY, "Technology", ctx)
+        self.assertTrue(drivers)
+        self.assertTrue(any("opposes" in d for d in drivers))
+        self.assertTrue(any("high-impact" in d for d in drivers))
+        self.assertTrue(any("earnings" in d for d in drivers))
 
     def test_short_series_is_ignored(self):
         self.assertEqual(_run([0.004] * 20), [])

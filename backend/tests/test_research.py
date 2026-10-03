@@ -98,6 +98,24 @@ class TestValidation(unittest.TestCase):
         self.assertTrue(rs.validate_annotation({"confidence_delta": 5}, 50.0, 15.0)["supports_setup"])
         self.assertFalse(rs.validate_annotation({"confidence_delta": -5}, 50.0, 15.0)["supports_setup"])
 
+    def test_media_counter_impact_is_non_negative_and_bounded(self):
+        out = rs.validate_annotation({"counter_impact": 99}, 50.0, 15.0)
+        self.assertEqual(out["counter_impact"], 15.0)
+        # A negative value is a magnitude, so it is normalised rather than trusted.
+        self.assertEqual(rs.validate_annotation({"counter_impact": -6}, 50.0, 15.0)["counter_impact"], 6.0)
+        self.assertEqual(rs.validate_annotation({}, 50.0, 15.0)["counter_impact"], 0.0)
+        self.assertEqual(
+            rs.validate_annotation({"counter_impact": "lots"}, 50.0, 15.0)["counter_impact"], 0.0
+        )
+        self.assertEqual(
+            rs.validate_annotation({"counter_impact": float("nan")}, 50.0, 15.0)["counter_impact"],
+            0.0,
+        )
+
+    def test_system_prompt_requests_the_counter_impact(self):
+        self.assertIn("counter_impact", rs.SYSTEM_PROMPT)
+        self.assertIn("against", rs.SYSTEM_PROMPT.lower())
+
     def test_system_prompt_lists_only_known_flags(self):
         self.assertIn("JSON only", rs.SYSTEM_PROMPT)
         for flag in rs.RISK_FLAGS:

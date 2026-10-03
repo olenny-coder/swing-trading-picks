@@ -115,6 +115,9 @@ class SignalListResponse(BaseModel):
     limit: int
     offset: int
     summary: dict
+    # True when the payload is the synthetic demo dataset served to visitors
+    # who are not signed in.
+    demo: bool = False
 
 
 class SummaryResponse(BaseModel):
@@ -181,6 +184,7 @@ class MacroDashboardOut(BaseModel):
     macro_events: list[MacroEventOut] = []
     earnings: list[EarningsEventOut] = []
     sector_heatmap: dict[str, float] = {}
+    demo: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +216,7 @@ class SignalDetailOut(BaseModel):
     indicators: dict = {}
     doji_highlight: bool = False
     option_chain: list[OptionContractOut] = []
+    demo: bool = False
 
 
 # ---------------------------------------------------------------------------

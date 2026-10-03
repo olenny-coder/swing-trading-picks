@@ -45,6 +45,8 @@ export interface SignalAnnotation {
   sentiment: Sentiment;
   risk_flags: string[];
   confidence_delta: number;
+  /** How much adverse macro/media coverage argues against the trade (0-15). */
+  counter_impact?: number;
   base_confidence: number;
   adjusted_confidence: number;
   supports_setup: boolean;
@@ -110,6 +112,8 @@ export interface SignalListResponse {
   limit: number;
   offset: number;
   summary: Record<string, unknown> | null;
+  /** True when this is the synthetic demo dataset (visitor not signed in). */
+  demo?: boolean;
 }
 
 export interface BarOut {
@@ -145,6 +149,8 @@ export interface SignalDetail {
   };
   doji_highlight: boolean;
   option_chain: OptionContractOut[];
+  /** True when this is the synthetic demo dataset (visitor not signed in). */
+  demo?: boolean;
 }
 
 export interface MacroEventOut {
@@ -187,6 +193,8 @@ export interface MacroDashboard {
   macro_events: MacroEventOut[];
   earnings: EarningsEventOut[];
   sector_heatmap: Record<string, number>;
+  /** True when this is the synthetic demo dataset (visitor not signed in). */
+  demo?: boolean;
 }
 
 export interface CredentialOut {

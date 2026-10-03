@@ -6,6 +6,7 @@ import type { MacroDashboard } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
 import { EarningsList, MacroEventList, SectorHeatmap } from "@/components/MacroWidgets";
 import { Collapsible } from "@/components/Collapsible";
+import { DemoBanner } from "@/components/DemoBanner";
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
@@ -40,6 +41,8 @@ export default function MacroPage() {
         <h1 className="text-xl font-semibold sm:text-2xl">Macro Dashboard</h1>
         <p className="text-sm text-slate-400">Market regime, volatility, rates, and the event calendar.</p>
       </div>
+
+      {data.demo && <DemoBanner />}
 
       {snap && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

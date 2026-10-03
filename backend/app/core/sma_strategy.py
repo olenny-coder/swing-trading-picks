@@ -84,6 +84,53 @@ DEFAULT_BACKTEST_WIN_RATES = {
     SETUP_UR1: 0.54, SETUP_DR1: 0.54, SETUP_UR2: 0.57, SETUP_DR2: 0.57,
 }
 
+# ---------------------------------------------------------------------------
+# Blended confidence
+# ---------------------------------------------------------------------------
+# Confidence is a blend of two factor groups, each scored 0-100:
+#
+# * CONTINUATION factors describe the trend the setup wants to ride.
+# * REVERSAL factors describe the turn that triggers the entry — the end of a
+#   pullback for continuation setups, or a genuine change of direction for
+#   reversal setups.
+#
+# Which group dominates depends on the setup family (see FAMILY_WEIGHTS), and a
+# small set of context adjustments is applied on top of the blend.
+CONTINUATION_FACTORS = (
+    "trend_separation",   # price beyond the 50 SMA, measured in ATRs
+    "ma_alignment",       # SMA20 vs SMA50 separation, in ATRs
+    "pullback_control",   # how shallow and orderly the pullback was
+    "structure_clean",    # no counter-flush against the trend
+    "trigger_strength",   # EXE quality + LP break margin + promptness
+    "participation",      # volume confirmation
+)
+
+REVERSAL_FACTORS = (
+    "flush_intensity",    # size/aggression of the flush into the level
+    "liquidity_sweep",    # did it take out a prior swing extreme
+    "reversal_trigger",   # EXE quality in the recovery direction + reclaim
+    "exhaustion",         # RSI extreme and extension from the mean
+    "structure",          # double pattern / bigger retracement / compression
+)
+
+FAMILY_WEIGHTS: dict[str, tuple[float, float]] = {
+    # setup: (continuation weight, reversal weight)
+    SETUP_UC1: (0.60, 0.40),
+    SETUP_UC2: (0.55, 0.45),
+    SETUP_DC1: (0.60, 0.40),
+    SETUP_DC2: (0.55, 0.45),
+    SETUP_UR1: (0.35, 0.65),
+    SETUP_DR1: (0.35, 0.65),
+    SETUP_UR2: (0.30, 0.70),
+    SETUP_DR2: (0.30, 0.70),
+}
+
+# Context adjustments applied on top of the blend.
+REGIME_ADJUSTMENT_MAX = 8.0
+SECTOR_ADJUSTMENT_MAX = 5.0
+COUNTER_IMPACT_MIN = -15.0
+COUNTER_IMPACT_MAX = 5.0
+
 
 @dataclass
 class SignalDraft:
@@ -155,40 +202,6 @@ def _prev_swing(indices: list[int], before: int) -> int | None:
 # ---------------------------------------------------------------------------
 # Confidence assembly
 # ---------------------------------------------------------------------------
-def _regime_subscore(direction: str, regime: str) -> float:
-    if direction == SIGNAL_SELL:
-        return 90.0 if regime == "bearish" else (70.0 if regime == "neutral" else 30.0)
-    return 90.0 if regime == "bullish" else (70.0 if regime == "neutral" else 30.0)
-
-
-def _sector_subscore(direction: str, sector: str | None, ctx: SignalContext) -> float:
-    if not sector:
-        return 60.0
-    if direction == SIGNAL_SELL:
-        if sector in ctx.lagging_sectors:
-            return 85.0
-        if sector in ctx.leading_sectors:
-            return 40.0
-        return 60.0
-    if sector in ctx.leading_sectors:
-        return 85.0
-    if sector in ctx.lagging_sectors:
-        return 40.0
-    return 60.0
-
-
-def _macro_subscore(sector: str | None, ctx: SignalContext) -> float:
-    score = 100.0
-    if ctx.high_impact_events_within_2d:
-        score -= 20.0
-    if ctx.rate_rising_sharply and is_rate_sensitive(sector):
-        score -= 20.0
-    if ctx.earnings_in_days is not None and ctx.earnings_in_days <= 7:
-        score -= 20.0
-    score += max(-15.0, min(15.0, ctx.macro_sentiment * 15.0))
-    return max(0.0, min(100.0, score))
-
-
 def _base_event_flags(sector: str | None, ctx: SignalContext) -> dict:
     rotation = "neutral"
     if sector in ctx.leading_sectors:
@@ -216,9 +229,138 @@ def _earnings_suppressed(ctx: SignalContext, conf: float) -> bool:
     return True
 
 
+def _scale(value: float, low: float, high: float) -> float:
+    """Linear map of ``value`` from [low, high] onto 0-100, clamped."""
+    if high <= low:
+        return 50.0
+    return max(0.0, min(100.0, (value - low) / (high - low) * 100.0))
+
+
+def _centred(value: float, neutral: float, span: float) -> float:
+    """Score where ``neutral`` maps to 50 and ``neutral ± span`` maps to 0/100."""
+    if span <= 0:
+        return 50.0
+    return max(0.0, min(100.0, 50.0 + (value - neutral) / span * 50.0))
+
+
+def _trend_separation_factor(close: float, sma50_value: float, atr_value: float, sign: float) -> float:
+    """How far price sits beyond the 50 SMA, in ATRs (2 ATRs or more scores 100)."""
+    if not atr_value:
+        return 50.0
+    return _scale((close - sma50_value) * sign / atr_value, 0.0, 2.0)
+
+
+def _ma_alignment_factor(sma20_value: float, sma50_value: float, atr_value: float, sign: float) -> float:
+    """Separation of the 20 and 50 SMA, in ATRs (a full ATR apart scores 100)."""
+    if not atr_value:
+        return 50.0
+    return _scale((sma20_value - sma50_value) * sign / atr_value, 0.0, 1.0)
+
+
+def _trend_context_factor(close: float, sma50_value: float, atr_value: float, sign: float) -> float:
+    """Context for reversal setups: 50 when price is at the 50 SMA, 100 when the
+    trend already leans the trade's way, 0 when it leans hard against it."""
+    if not atr_value:
+        return 50.0
+    return _centred((close - sma50_value) * sign / atr_value, 0.0, 2.0)
+
+
+def _participation_factor(volume_ratio: float) -> float:
+    """Volume versus its 20-day average: 1.0x is neutral (50)."""
+    return _centred(volume_ratio, 1.0, 0.8)
+
+
+def _trigger_factor(exe_body: float, lp_margin_atr: float, bars_since: int, max_bars: int) -> float:
+    """EXE candle quality + how decisively and promptly it cleared the LP."""
+    promptness = _scale(max_bars - bars_since + 1, 1, max_bars)
+    return (
+        0.40 * _scale(exe_body, 0.50, 0.90)
+        + 0.35 * _scale(lp_margin_atr, 0.0, 0.8)
+        + 0.25 * promptness
+    )
+
+
+def _group_score(factors: dict[str, float], keys: tuple[str, ...]) -> float:
+    """Mean of the factor group, over the factors that were actually measured."""
+    present = [float(factors[k]) for k in keys if isinstance(factors.get(k), (int, float))]
+    if not present:
+        return 50.0
+    return sum(present) / len(present)
+
+
+def _exhaustion(rsi_value: float | None, long_side: bool) -> float:
+    """How stretched the move is: 50 at a neutral RSI, 100 at an extreme."""
+    if rsi_value is None:
+        return 50.0
+    deviation = (50.0 - rsi_value) if long_side else (rsi_value - 50.0)
+    return _centred(deviation, 0.0, 22.0)
+
+
+def _regime_adjustment(direction: str, regime: str) -> float:
+    aligned = regime == ("bullish" if direction == SIGNAL_BUY else "bearish")
+    opposed = regime == ("bearish" if direction == SIGNAL_BUY else "bullish")
+    if aligned:
+        return REGIME_ADJUSTMENT_MAX
+    if opposed:
+        return -REGIME_ADJUSTMENT_MAX
+    return 0.0
+
+
+def _sector_adjustment(direction: str, sector: str | None, ctx: SignalContext) -> float:
+    if not sector:
+        return 0.0
+    wants_leading = direction == SIGNAL_BUY
+    favours = sector in (ctx.leading_sectors if wants_leading else ctx.lagging_sectors)
+    against = sector in (ctx.lagging_sectors if wants_leading else ctx.leading_sectors)
+    if favours:
+        return SECTOR_ADJUSTMENT_MAX
+    if against:
+        return -SECTOR_ADJUSTMENT_MAX
+    return 0.0
+
+
+def _counter_impact(direction: str, sector: str | None, ctx: SignalContext) -> float:
+    """Impact of macro events / media arguing AGAINST the recommended direction.
+
+    Negative means the counter case is stronger and drags confidence down; a
+    small positive value means the backdrop actively supports the trade.
+    """
+    impact = 0.0
+    # Net economic-calendar sentiment, signed against the trade direction.
+    against = -ctx.macro_sentiment if direction == SIGNAL_BUY else ctx.macro_sentiment
+    if against > 0:
+        impact -= min(10.0, against * 10.0)
+    else:
+        impact += min(3.0, -against * 3.0)
+    if ctx.high_impact_events_within_2d:
+        impact -= 5.0
+    if ctx.rate_rising_sharply and is_rate_sensitive(sector) and direction == SIGNAL_BUY:
+        impact -= 3.0
+    if ctx.earnings_in_days is not None and ctx.earnings_in_days <= 7:
+        impact -= 2.0
+    return max(COUNTER_IMPACT_MIN, min(COUNTER_IMPACT_MAX, impact))
+
+
+def _counter_drivers(direction: str, sector: str | None, ctx: SignalContext) -> list[str]:
+    """Human-readable reasons behind the counter impact (shown in the UI)."""
+    drivers: list[str] = []
+    against = -ctx.macro_sentiment if direction == SIGNAL_BUY else ctx.macro_sentiment
+    if against > 0.05:
+        drivers.append("economic-calendar sentiment opposes this direction")
+    elif against < -0.05:
+        drivers.append("economic-calendar sentiment supports this direction")
+    if ctx.high_impact_events_within_2d:
+        drivers.append("high-impact macro event within 2 days")
+    if ctx.rate_rising_sharply and is_rate_sensitive(sector) and direction == SIGNAL_BUY:
+        drivers.append("rising yields pressure a rate-sensitive long")
+    if ctx.earnings_in_days is not None and ctx.earnings_in_days <= 7:
+        drivers.append(f"earnings due in {ctx.earnings_in_days}d (gap risk)")
+    return drivers
+
+
 def _finish(
     ticker, name, sector, setup, entry, target, stop, price, volume,
-    volume_ratio, met, total, triggered, ctx,
+    volume_ratio, factors, triggered, ctx,
 ) -> SignalDraft | None:
     direction = DIRECTION_BY_SETUP[setup]
     rr = SETUP_RR.get(setup, 2.0)
@@ -226,19 +368,42 @@ def _finish(
     # untradeable, so the setup is dropped rather than reported.
     if entry > 0 and abs(entry - stop) / entry > MAX_RISK_PCT:
         return None
-    subs = {
-        "technical": (met / total * 100.0) if total else 0.0,
-        "backtest": ctx.backtest_win_rates.get(
-            setup, DEFAULT_BACKTEST_WIN_RATES.get(setup, 0.55)
-        ) * 100.0,
-        "regime": _regime_subscore(direction, ctx.regime),
-        "sector": _sector_subscore(direction, sector, ctx),
-        "volume": min(100.0, volume_ratio / 2.0 * 100.0),
-        "macro": _macro_subscore(sector, ctx),
-    }
-    conf = confidence.compute_confidence(subs)
+
+    factors = dict(factors or {})
+    factors.setdefault("participation", _participation_factor(volume_ratio))
+
+    continuation = _group_score(factors, CONTINUATION_FACTORS)
+    reversal = _group_score(factors, REVERSAL_FACTORS)
+    w_cont, w_rev = FAMILY_WEIGHTS.get(setup, (0.5, 0.5))
+    blend = continuation * w_cont + reversal * w_rev
+
+    regime_adj = _regime_adjustment(direction, ctx.regime)
+    sector_adj = _sector_adjustment(direction, sector, ctx)
+    counter = _counter_impact(direction, sector, ctx)
+
+    conf = round(max(0.0, min(100.0, blend + regime_adj + sector_adj + counter)), 1)
     if _earnings_suppressed(ctx, conf):
         return None
+
+    components: dict[str, float] = {
+        "continuation": round(continuation, 1),
+        "reversal": round(reversal, 1),
+        "continuation_weight": round(w_cont * 100.0),
+        "reversal_weight": round(w_rev * 100.0),
+        "blend": round(blend, 1),
+        "regime_adjustment": round(regime_adj, 1),
+        "sector_adjustment": round(sector_adj, 1),
+        "counter_impact": round(counter, 1),
+        "backtest_win_rate": round(
+            ctx.backtest_win_rates.get(setup, DEFAULT_BACKTEST_WIN_RATES.get(setup, 0.55)) * 100.0,
+            1,
+        ),
+        "final": conf,
+    }
+    for key in CONTINUATION_FACTORS + REVERSAL_FACTORS:
+        if isinstance(factors.get(key), (int, float)):
+            components[f"factor_{key}"] = round(float(factors[key]), 1)
+
     flags = _base_event_flags(sector, ctx)
     flags.update(
         {
@@ -246,6 +411,8 @@ def _finish(
             "direction": direction,
             "rr": rr,
             "confidence_label": confidence.confidence_label(conf),
+            "counter_impact": round(counter, 1),
+            "counter_impact_drivers": _counter_drivers(direction, sector, ctx),
         }
     )
     return SignalDraft(
@@ -261,7 +428,7 @@ def _finish(
         volume=volume,
         rr=rr,
         confidence=conf,
-        confidence_components=subs,
+        confidence_components=components,
         triggered_rules=triggered,
         event_flags=flags,
     )
@@ -275,7 +442,7 @@ def _project(entry: float, risk: float, rr: float, direction: str) -> float:
 # Strategy 1 — Continuation (UC1/UC2/DC1/DC2)
 # ---------------------------------------------------------------------------
 def _detect_continuation(
-    ticker, name, sector, ohlcv, sma20, sma50, atr, swings_high, swings_low, last, avg_vol, ctx,
+    ticker, name, sector, ohlcv, sma20, sma50, atr, rsi, swings_high, swings_low, last, avg_vol, ctx,
     long_side: bool,
 ):
     opens, highs, lows, closes, volumes = ohlcv
@@ -371,16 +538,28 @@ def _detect_continuation(
         risk = max(stop - entry, 0.25 * a)
         target = _project(entry, risk, SETUP_RR[setup], SIGNAL_SELL)
 
-    checks = [
-        flow_ok,
-        not touched_slow if setup in (SETUP_UC1, SETUP_DC1) else touched_slow,
-        not counter_flush,
-        within_time,
-        exe_ok,
-        lp_ok,
-        not (setup in (SETUP_UC2, SETUP_DC2) and long_side and c > highs[a_idx]),
-        volume_ratio >= 1.0,
-    ]
+    # --- Factor groups feeding the blended confidence ------------------------
+    sign = 1.0 if long_side else -1.0
+    exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
+    lp_margin_atr = max(0.0, (c - lp) * sign / a)
+    pull_extreme = lows[b] if long_side else highs[b]
+    impulse_extreme = highs[a_idx] if long_side else lows[a_idx]
+    pull_depth_atr = abs(impulse_extreme - pull_extreme) / a
+    dist_mean_atr = abs(c - sma20[last]) / a
+
+    factors = {
+        # Continuation group — is the trend worth riding?
+        "trend_separation": _trend_separation_factor(c, sma50[last], a, sign),
+        "ma_alignment": _ma_alignment_factor(sma20[last], sma50[last], a, sign),
+        "pullback_control": _scale(4.0 - pull_depth_atr, 0.0, 4.0),
+        "structure_clean": 100.0 if not counter_flush else 25.0,
+        "trigger_strength": _trigger_factor(exe_body, lp_margin_atr, bars_since_b, MAX_SETUP_BARS),
+        # Reversal group — has the pullback actually turned back in-trend?
+        "reversal_trigger": _trigger_factor(exe_body, lp_margin_atr, bars_since_b, MAX_SETUP_BARS),
+        "exhaustion": _exhaustion(rsi[last], long_side),
+        "structure": _scale(4.0 - pull_depth_atr, 0.0, 4.0),
+        "liquidity_sweep": 100.0 if touched_slow else 50.0,
+    }
     rules = [
         "positive_flow" if long_side else "negative_flow",
         "sma20_above_sma50" if long_side else "sma20_below_sma50",
@@ -392,7 +571,7 @@ def _detect_continuation(
     ]
     return _finish(
         ticker, name, sector, setup, entry, target, stop, c, volumes[last],
-        volume_ratio, sum(1 for x in checks if x), len(checks), rules, ctx,
+        volume_ratio, factors, rules, ctx,
     )
 
 
@@ -406,7 +585,7 @@ def _is_sideways(sma20, sma50, last) -> bool:
 
 
 def _detect_early_reversal(
-    ticker, name, sector, ohlcv, sma20, sma50, atr, swings_low, swings_high, last, avg_vol, ctx,
+    ticker, name, sector, ohlcv, sma20, sma50, atr, rsi, swings_low, swings_high, last, avg_vol, ctx,
     long_side: bool,
 ):
     opens, highs, lows, closes, volumes = ohlcv
@@ -436,9 +615,25 @@ def _detect_early_reversal(
         stop = min(lows[f : last + 1]) - STOP_BUFFER_ATR * a
         risk = max(entry - stop, 0.25 * a)
         target = _project(entry, risk, SETUP_RR[setup], SIGNAL_BUY)
-        checks = [_is_sideways(sma20, sma50, last), True, swept, exe_ok, lp_ok, (last - f) <= window]
         rules = ["sideways_range", "downside_flush", "liquidity_swept" if swept else "lp_formed",
                  "bullish_exe", "close_at_or_above_lp", f"exe_within_{last - f}_bars"]
+        flush_atr = (highs[f] - lows[f]) / max(atr[f] or 0.0, 1e-9)
+        depth_atr = (max(highs[f : last + 1]) - min(lows[f : last + 1])) / a
+        exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
+        reclaim_atr = max(0.0, (c - lp) / a)
+        factors = {
+            "flush_intensity": _scale(flush_atr, FLUSH_ATR_MIN, 3.0),
+            "liquidity_sweep": 100.0 if swept else 45.0,
+            "reversal_trigger": _trigger_factor(exe_body, reclaim_atr, last - f, window),
+            "exhaustion": _exhaustion(rsi[last], True),
+            "structure": _scale(3.0 - depth_atr, 0.0, 3.0),
+            # Continuation context: a reversal is easier from a flat backdrop.
+            "trend_separation": _trend_context_factor(c, sma50[last], a, 1.0),
+            "ma_alignment": _centred((sma20[last] - sma50[last]) / a, 0.0, 1.0),
+            "pullback_control": _scale(3.0 - depth_atr, 0.0, 3.0),
+            "structure_clean": 100.0,
+            "trigger_strength": _trigger_factor(exe_body, reclaim_atr, last - f, window),
+        }
     else:
         window = DR1_MAX_BARS
         f = None
@@ -463,15 +658,29 @@ def _detect_early_reversal(
         stop = max(highs[f : last + 1]) + STOP_BUFFER_ATR * a
         risk = max(stop - entry, 0.25 * a)
         target = _project(entry, risk, SETUP_RR[setup], SIGNAL_SELL)
-        checks = [_is_sideways(sma20, sma50, last), True, majority, exe_ok, lp_ok, True]
         rules = ["sideways_range", "majority_flush", "liquidity_formed", "bearish_exe",
                  "close_at_or_below_lp", "no_bar_count_required"]
+        flush_atr = (highs[f] - lows[f]) / max(atr[f] or 0.0, 1e-9)
+        depth_atr = (max(highs[f : last + 1]) - min(lows[f : last + 1])) / a
+        exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
+        reclaim_atr = max(0.0, (lp - c) / a)
+        factors = {
+            "flush_intensity": _scale(flush_atr, FLUSH_ATR_MIN, 3.0),
+            "liquidity_sweep": 100.0 if majority else 45.0,
+            "reversal_trigger": _trigger_factor(exe_body, reclaim_atr, last - f, window),
+            "exhaustion": _exhaustion(rsi[last], False),
+            "structure": _scale(3.0 - depth_atr, 0.0, 3.0),
+            "trend_separation": _trend_context_factor(c, sma50[last], a, -1.0),
+            "ma_alignment": _centred((sma20[last] - sma50[last]) / a * -1.0, 0.0, 1.0),
+            "pullback_control": _scale(3.0 - depth_atr, 0.0, 3.0),
+            "structure_clean": 100.0,
+            "trigger_strength": _trigger_factor(exe_body, reclaim_atr, last - f, window),
+        }
 
     volume_ratio = (volumes[last] / avg_vol) if avg_vol else 1.0
-    checks.append(volume_ratio >= 1.0)
     return _finish(
         ticker, name, sector, setup, entry, target, stop, c, volumes[last],
-        volume_ratio, sum(1 for x in checks if x), len(checks), rules, ctx,
+        volume_ratio, factors, rules, ctx,
     )
 
 
@@ -479,7 +688,7 @@ def _detect_early_reversal(
 # Strategy 3 — Double top / double bottom (UR2/DR2)
 # ---------------------------------------------------------------------------
 def _detect_double(
-    ticker, name, sector, ohlcv, sma20, sma50, atr, swings_high, swings_low, last, avg_vol, ctx,
+    ticker, name, sector, ohlcv, sma20, sma50, atr, rsi, swings_high, swings_low, last, avg_vol, ctx,
     long_side: bool,
 ):
     """UR2 = double top in an up-flow (bearish). DR2 = double bottom in a down-flow (bullish)."""
@@ -523,10 +732,24 @@ def _detect_double(
         target = _project(entry, risk, SETUP_RR[setup], SIGNAL_BUY)
         # Special exit alternative: the 50 SMA is a valid objective.
         target = min(target, max(sma50[last] * 1.02, entry + 1.0 * a)) if sma50[last] > entry else target
-        checks = [True, True, flush_count >= MAJORITY_FLUSH_MIN, abs(lows[l1] - lows[l2]) / lows[l1] <= DOUBLE_TOLERANCE,
-                  exe_ok, lp_ok, (last - l2) <= DR2_MAX_BARS]
         rules = ["negative_flow", "majority_flush", "double_bottom", "neckline_breakout",
                  "bullish_exe", "close_at_or_above_lp", f"exe_within_{last - l2}_bars"]
+        exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
+        reclaim_atr = max(0.0, (c - lp) / a)
+        base_depth_atr = abs(max(highs[l1], highs[l2]) - min(lows[l1], lows[l2])) / a
+        similarity = 1.0 - abs(lows[l1] - lows[l2]) / max(lows[l1], 1e-9) / DOUBLE_TOLERANCE
+        factors = {
+            "flush_intensity": _scale(flush_count, 1.0, float(MAJORITY_FLUSH_MIN + 1)),
+            "liquidity_sweep": 100.0 * max(0.0, min(1.0, similarity)),
+            "reversal_trigger": _trigger_factor(exe_body, reclaim_atr, last - l2, DR2_MAX_BARS),
+            "exhaustion": _exhaustion(rsi[last], True),
+            "structure": _scale(5.0 - base_depth_atr, 0.0, 5.0),
+            "trend_separation": _trend_context_factor(c, sma50[last], a, 1.0),
+            "ma_alignment": _centred((sma20[last] - sma50[last]) / a, 0.0, 1.0),
+            "pullback_control": _scale(5.0 - base_depth_atr, 0.0, 5.0),
+            "structure_clean": 100.0,
+            "trigger_strength": _trigger_factor(exe_body, reclaim_atr, last - l2, DR2_MAX_BARS),
+        }
     else:
         # ---- UR2: double top, price in an up-flow ----
         if c <= sma50[last]:
@@ -562,16 +785,30 @@ def _detect_double(
         stop = max(highs[h1], highs[h2]) + STOP_BUFFER_ATR * a
         risk = max(stop - entry, 0.25 * a)
         target = _project(entry, risk, SETUP_RR[setup], SIGNAL_SELL)
-        checks = [True, True, bigger, overlap, exe_ok, lp_ok,
-                  abs(highs[h1] - highs[h2]) / highs[h1] <= DOUBLE_TOLERANCE]
         rules = ["positive_flow", "double_top", "bigger_retracement", "partial_overlap",
                  "bearish_exe", "close_at_or_below_lp", "fails_at_lp"]
+        exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
+        reclaim_atr = max(0.0, (lp - c) / a)
+        pattern_depth_atr = (max(highs[h1], highs[h2]) - lows[trough]) / a
+        similarity = 1.0 - abs(highs[h1] - highs[h2]) / max(highs[h1], 1e-9) / DOUBLE_TOLERANCE
+        retrace_ratio = max(0.0, min(1.0, current_depth / prior_depth - 1.0)) if prior_depth else 0.0
+        factors = {
+            "flush_intensity": _scale(current_depth / a, 1.0, 3.0),
+            "liquidity_sweep": 100.0 * max(0.0, min(1.0, similarity)),
+            "reversal_trigger": _trigger_factor(exe_body, reclaim_atr, last - h2, MAX_SETUP_BARS),
+            "exhaustion": _exhaustion(rsi[last], False),
+            "structure": 0.5 * _scale(5.0 - pattern_depth_atr, 0.0, 5.0) + 0.5 * (retrace_ratio * 100.0),
+            "trend_separation": _trend_context_factor(c, sma50[last], a, -1.0),
+            "ma_alignment": _centred((sma20[last] - sma50[last]) / a * -1.0, 0.0, 1.0),
+            "pullback_control": _scale(5.0 - pattern_depth_atr, 0.0, 5.0),
+            "structure_clean": 100.0 if overlap else 40.0,
+            "trigger_strength": _trigger_factor(exe_body, reclaim_atr, last - h2, MAX_SETUP_BARS),
+        }
 
     volume_ratio = (volumes[last] / avg_vol) if avg_vol else 1.0
-    checks.append(volume_ratio >= 1.0)
     return _finish(
         ticker, name, sector, setup, entry, target, stop, c, volumes[last],
-        volume_ratio, sum(1 for x in checks if x), len(checks), rules, ctx,
+        volume_ratio, factors, rules, ctx,
     )
 
 
@@ -598,6 +835,7 @@ def analyze_ticker(
     sma20 = ta.sma(closes, SMA_FAST)
     sma50 = ta.sma(closes, SMA_SLOW)
     atr = ta.atr(highs, lows, closes)
+    rsi = ta.rsi(closes)
     swings_high, swings_low = _swing_indices(highs, lows)
 
     last = len(bars) - 1
@@ -610,7 +848,7 @@ def analyze_ticker(
         """Dispatch one detector; log (never silently swallow) unexpected errors."""
         try:
             d = fn(
-                ticker, name, sector, ohlcv, sma20, sma50, atr,
+                ticker, name, sector, ohlcv, sma20, sma50, atr, rsi,
                 swings_a, swings_b, last, avg_vol, ctx, side,
             )
         except (IndexError, ValueError) as exc:

@@ -28,6 +28,8 @@ from ..schemas import (
 )
 from ..services.credentials import resolve_credentials
 from ..services.data_service import load_bars
+from ..services import demo_service
+from .deps import get_optional_user
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
@@ -144,7 +146,13 @@ def daily_shortlist(
     all: bool = Query(default=False, description="Show all signals (no top-20 cap)"),
     filters: SignalFilters = Depends(_filters),
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
 ) -> SignalListResponse:
+    if user is None:
+        # Visitors who are not signed in only ever see the synthetic demo set.
+        return SignalListResponse.model_validate(
+            demo_service.signals_payload(filters, limit=20, offset=0, show_all=all)
+        )
     d = latest_signal_date(db)
     if d is None:
         return SignalListResponse(
@@ -170,7 +178,12 @@ def list_signals(
     date_: date | None = Query(default=None, alias="date"),
     filters: SignalFilters = Depends(_filters),
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
 ) -> SignalListResponse:
+    if user is None:
+        return SignalListResponse.model_validate(
+            demo_service.signals_payload(filters, limit=limit, offset=offset, show_all=True)
+        )
     query = db.query(Signal)
     if date_ is not None:
         query = query.filter(Signal.date == date_)
@@ -187,7 +200,11 @@ def list_signals(
 
 
 @router.get("/summary", response_model=SummaryResponse)
-def summary(db: Session = Depends(get_db)) -> SummaryResponse:
+def summary(
+    db: Session = Depends(get_db), user: User | None = Depends(get_optional_user)
+) -> SummaryResponse:
+    if user is None:
+        return SummaryResponse.model_validate(demo_service.summary_payload())
     d = latest_signal_date(db)
     signals = db.query(Signal).filter(Signal.date == d).all() if d else []
     return _summary(db, signals)
@@ -197,7 +214,18 @@ def summary(db: Session = Depends(get_db)) -> SummaryResponse:
 def signal_detail(
     signal_id: int,
     db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
 ) -> SignalDetailOut:
+    if user is None:
+        # Anonymous visitors can only resolve demo ids.
+        payload = demo_service.detail_payload(signal_id)
+        if payload is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Signal not found. Sign in to view live signals.",
+            )
+        return SignalDetailOut.model_validate(payload)
+
     sig = db.query(Signal).filter(Signal.id == signal_id).first()
     if sig is None:
         raise HTTPException(status_code=404, detail="Signal not found")

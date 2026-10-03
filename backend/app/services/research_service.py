@@ -69,12 +69,17 @@ SYSTEM_PROMPT = (
     '{"sentiment":"bullish|bearish|neutral|mixed",'
     '"risk_flags":["flag"],'
     '"confidence_delta":0,'
+    '"counter_impact":0,'
     '"rationale":"..."}\n\n'
     "Rules:\n"
     "- sentiment: your near-term view of the STOCK, not of the trade.\n"
     "- confidence_delta: integer from -15 to 15. Positive means you are MORE "
     "confident the setup works as stated; negative means LESS. Use 0 when the "
     "data adds nothing.\n"
+    "- counter_impact: integer from 0 to 15. How much known adverse macro, sector "
+    "or media/news coverage argues AGAINST this recommended direction (the "
+    "'counter' case). 0 means nothing material opposes it; 15 means the counter "
+    "case is overwhelming. This is a magnitude only — it is never negative.\n"
     "- risk_flags: 0-4 items, each chosen ONLY from this list: "
     + ", ".join(RISK_FLAGS)
     + ".\n"
@@ -185,6 +190,12 @@ def build_brief(db: Session, signal: Signal) -> str:
         f" | macro sentiment {flags.get('macro_sentiment', 0)}"
         f" | high-impact event within 2d: {'yes' if flags.get('macro_risk') else 'no'}"
         f" | options chain: {'yes' if flags.get('options_liquid') else 'unavailable'}"
+        f" | engine macro counter-impact: {flags.get('counter_impact', 0)}"
+        + (
+            " (" + "; ".join(flags.get("counter_impact_drivers") or []) + ")"
+            if flags.get("counter_impact_drivers")
+            else ""
+        )
     )
     return "\n".join(lines)
 
@@ -224,11 +235,22 @@ def validate_annotation(raw: dict, base_confidence: float, max_delta: float) -> 
 
     rationale = " ".join(str(raw.get("rationale", "")).split())[:MAX_RATIONALE]
 
+    # Media/macro "counter case" magnitude: adverse pressure against the trade.
+    counter_max = max(0.0, float(max_delta))
+    try:
+        counter_impact = float(raw.get("counter_impact", 0) or 0)
+    except (TypeError, ValueError):
+        counter_impact = 0.0
+    if counter_impact != counter_impact:  # NaN guard
+        counter_impact = 0.0
+    counter_impact = round(max(0.0, min(counter_max, abs(counter_impact))), 1)
+
     adjusted = round(max(0.0, min(100.0, base_confidence + delta)), 1)
     return {
         "sentiment": sentiment,
         "risk_flags": flags,
         "confidence_delta": delta,
+        "counter_impact": counter_impact,
         "base_confidence": round(float(base_confidence), 1),
         "adjusted_confidence": adjusted,
         "supports_setup": delta > 0,
@@ -340,6 +362,7 @@ def run_once(
                 "sentiment": annotation["sentiment"],
                 "risk_flags": annotation["risk_flags"],
                 "confidence_delta": annotation["confidence_delta"],
+                "counter_impact": annotation["counter_impact"],
                 "adjusted_confidence": annotation["adjusted_confidence"],
             }
         )

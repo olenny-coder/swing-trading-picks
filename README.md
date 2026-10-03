@@ -20,13 +20,13 @@ A production-ready swing-trading signal application for **US equities**. It scan
   - Continuation: `UC1` / `UC2` (bullish, shallow / deep pullback), `DC1` / `DC2` (bearish).
   - Reversal: `UR1` (early upside), `DR1` (early downside), `UR2` (double top), `DR2` (double bottom).
   - Each setup is confirmed by an **EXE** (momentum entry candle) closing beyond the **LP** (liquidity point) within a 5–6 bar time limit; bearish setups are traded via **liquid put options** (never shorting).
-- **Confidence scoring** — weighted sum of technical confluence (40%), backtest performance (20%), regime alignment (15%), sector strength (10%), volume (5%), and macro/earnings risk (10%), labeled Low/Medium/High.
+- **Blended confidence** — a rating built from two factor groups: **continuation factors** (trend strength, MA alignment, pullback control, clean structure, trigger quality, participation) blended with **reversal factors** (flush intensity, liquidity sweep, reversal trigger, exhaustion, pattern quality), then adjusted for regime, sector rotation and a **counter impact** term. Labeled Low/Medium/High. See [How confidence is derived](#how-confidence-is-derived).
 - **Macro & event filtering** — market regime (SPY vs 200-day MA, VIX, yield curve), sector rotation, interest-rate sensitivity, earnings-proximity suppression, and high-impact-event confidence adjustment.
 - **API key management** — enter/update Alpaca (paper/live) and optional Finnhub/Polygon/FRED keys from the UI; keys are **encrypted at rest** (Fernet), **masked** in the UI, never sent to the browser, and fall back to environment variables.
 - **Responsive dashboard** — top-20 shortlist (with sector diversity), per-setup counters, filters (direction + setup), macro/earnings widgets, and interactive charts (TradingView Lightweight Charts) with an options chain.
 - **Backtesting** — event-aware replay with win rate, avg return, max drawdown, profit factor, Sharpe, and walk-forward-capable CLI.
 - **Scheduling** — APScheduler daily jobs (ingestion, macro, signal generation), plus a GitHub Actions cron entrypoint.
-- **Public read / admin control** — the daily view, history, macro dashboard, and charts are **readable without logging in**; only the admin (signed-in) can refresh data or change API keys/settings.
+- **Public read / admin control** — the daily view, history, macro dashboard, and charts render **without logging in**, but anonymous visitors only ever receive a **synthetic DEMO dataset**; the real shortlist is served solely to the signed-in admin. Only the admin can refresh data or change API keys/settings.
 - **LLM research agent (optional, Groq free tier)** — annotates existing signals with a news-style `sentiment`, up to four whitelisted `risk_flags`, and a **bounded confidence adjustment** (±15) shown alongside the engine score, with a short rationale. See [LLM research agent](#llm-research-agent-groq-free-tier).
 - **Collapsible sections & hamburger nav** — every major section can be expanded/collapsed, the header carries a hamburger menu at all screen sizes, and each signal page ends with a **"How confidence was derived"** breakdown showing the weighted sub-score math.
 - **One-service deployment** — FastAPI serves both the API and the exported frontend, so the app runs on **Render + Neon with no Vercel and no Node server**.
@@ -35,13 +35,24 @@ A production-ready swing-trading signal application for **US equities**. It scan
 
 ## Access model
 
-| Area | Public (no login) | Admin (logged in) |
+| Area | Visitor (no login) | Admin (logged in) |
 |---|---|---|
-| Daily view, History, Macro, Charts | ✅ view | ✅ view |
+| Daily view, History, Macro, Charts | ✅ **synthetic DEMO data only** | ✅ live data |
 | Refresh data button | — | ✅ |
+| Research agent button | — | ✅ |
 | Settings / API keys | — | ✅ |
 
-Sign in at `/login` (default `admin` / `changeme`) to refresh data or manage keys.
+**Anonymous visitors never see live signals.** Every public read endpoint checks for a valid
+token: with one you get the real shortlist from the database, without one you get a cached
+dataset built from the deterministic MOCK providers (see
+`backend/app/services/demo_service.py`). Demo rows use ids from `900000` up, so they can never
+collide with real rows, and an anonymous request for a real signal id returns 404 with a
+"sign in to view live signals" message. A missing **or invalid** token is treated as anonymous —
+a logged-out browser sees the demo, not a 401. The UI shows a **Demo** banner whenever the
+payload is synthetic.
+
+Sign in at `/login` (default `admin` / `changeme`) to see live signals, refresh data, run the
+research agent, or manage keys.
 
 ---
 
@@ -175,7 +186,80 @@ structural trigger. Definitions:
 > (`MOMENTUM_BODY_RATIO`, `FLUSH_ATR_MIN`, `MAX_SETUP_BARS`, `SETUP_RR`, `MAX_RISK_PCT`, …).
 > The source rules are discretionary, so each one is documented at its implementation site.
 
-**Macro / event filtering** (applied to every signal): earnings within 7 days suppress the signal unless confidence > 80 and the user opted into earnings plays; high-impact events within 2 trading days reduce confidence 10–20 points; regime/sector rotation bias confidence by signal direction; rate-sensitive sectors are penalized when the 10-year yield is rising sharply; and the **economic calendar's net sentiment** (positive/negative/neutral) nudges confidence up or down by up to 15 points.
+---
+
+## How confidence is derived
+
+Confidence is a **blended rating**, not a single technical score. Two factor groups are each
+scored 0–100, mixed by the setup's family, and then adjusted for context.
+
+### Step 1 — the two factor groups
+
+| Continuation factors | Measures |
+|---|---|
+| `trend_separation` | How far price sits beyond the 50 SMA, in ATRs |
+| `ma_alignment` | Separation of the 20 and 50 SMA |
+| `pullback_control` | How shallow and orderly the pullback was |
+| `structure_clean` | No flush bar against the trend before the trigger |
+| `trigger_strength` | EXE candle quality + how decisively and promptly it cleared the LP |
+| `participation` | Volume versus its 20-day average |
+
+| Reversal factors | Measures |
+|---|---|
+| `flush_intensity` | Size and aggression of the flush into the level |
+| `liquidity_sweep` | Whether a prior swing extreme was taken out |
+| `reversal_trigger` | Recovery candle quality + how far it reclaimed past the LP |
+| `exhaustion` | RSI stretch and distance from the mean |
+| `structure` | Pattern quality (double top/bottom similarity, retracement depth) |
+
+### Step 2 — blend by setup family
+
+`blend = continuation × w_cont + reversal × w_rev`, with per-setup weights in `FAMILY_WEIGHTS`:
+
+| Family | Continuation weight | Reversal weight | Rationale |
+|---|---|---|---|
+| `UC1` `UC2` `DC1` `DC2` | 60% / 55% | 40% / 45% | The trend is the primary edge; the pullback merely times the entry |
+| `UR1` `DR1` `UR2` `DR2` | 35% / 30% | 65% / 70% | The turn is the primary edge; the prior trend is only context |
+
+### Step 3 — context adjustments
+
+| Adjustment | Range | Source |
+|---|---|---|
+| Regime alignment | ±8 | Market regime versus the trade direction |
+| Sector rotation | ±5 | Leading vs lagging sector |
+| **Counter impact** | −15 … +5 | Macro events and media that argue **against** the recommendation |
+
+`confidence = clamp(blend + regime + sector + counter_impact, 0, 100)`, labeled Low 0–40,
+Medium 41–70, High 71–100.
+
+### Counter impact (the "counter recommended" factor)
+
+This term deliberately looks for what argues **against** the signal. It is computed at generation
+time from the event backdrop and stored per signal (`confidence_components.counter_impact`, with
+the reasons in `event_flags.counter_impact_drivers`):
+
+- the **economic calendar's net sentiment**, signed against the trade direction (a weak calendar hurts a long and helps a short) — up to −10
+- a **high-impact event within 2 days** — −5
+- **rising yields** pressuring a rate-sensitive long — −3
+- **earnings due within 7 days** (gap risk) — −2
+- supportive backdrop — up to +5
+
+The **media** half comes from the research agent: it returns a `counter_impact` magnitude (0–15)
+for adverse macro/sector/news coverage against the recommended direction, and that figure is
+shown alongside the macro one on the signal page. Its net effect already sits inside the
+annotation's `confidence_delta` on `adjusted_confidence`.
+
+> Both the macro term and the media magnitude are **penalties**: they can only subtract (plus a
+> small supportive bonus for the macro term). Every anchor is a named constant at the top of
+> `backend/app/core/sma_strategy.py` (`FAMILY_WEIGHTS`, `REGIME_ADJUSTMENT_MAX`,
+> `SECTOR_ADJUSTMENT_MAX`, `COUNTER_IMPACT_MIN/MAX`), and each signal's full arithmetic is
+> printed on its page under **How confidence was derived**.
+
+**Also applied:** earnings within 7 days suppress the signal entirely unless confidence > 80 and
+earnings plays are enabled; and a structural stop further than 15% from entry (`MAX_RISK_PCT`)
+drops the setup as untradeable.
+
+---
 
 **Macro data** comes from **Yahoo Finance** (real SPY vs 200-day MA, VIX, 10-year yield, and sector-ETF relative strength) via `httpx` — no key required — with FRED/Finnhub (optional keys) and the built-in MOCK provider as fallbacks. Stock prices/signals continue to use **Alpaca**.
 

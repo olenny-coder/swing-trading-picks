@@ -11,6 +11,7 @@ import { EMPTY_FILTERS, Filters, type FilterState } from "@/components/Filters";
 import { EarningsList, MacroEventList, SectorHeatmap } from "@/components/MacroWidgets";
 import { RefreshButton } from "@/components/RefreshButton";
 import { ResearchButton } from "@/components/ResearchButton";
+import { DemoBanner } from "@/components/DemoBanner";
 import { Collapsible } from "@/components/Collapsible";
 
 export default function HomePage() {
@@ -88,6 +89,8 @@ export default function HomePage() {
       </div>
 
       <SummaryCards summary={summary} />
+
+      {data?.demo && <DemoBanner />}
 
       <Filters
         filters={filters}
