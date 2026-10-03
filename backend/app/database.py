@@ -77,15 +77,22 @@ def _migrate() -> None:
         cols = {c["name"] for c in insp.get_columns("users")}
         if "is_admin" not in cols:
             with engine.begin() as conn:
+                # Add the column with NO default literal: `BOOLEAN DEFAULT 0` is
+                # rejected by PostgreSQL ("column is of type boolean but default
+                # expression is of type integer") even though SQLite tolerates it.
+                # Values are then written with bound parameters, so the driver
+                # picks the correct literal for the dialect.
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN"))
                 conn.execute(
-                    text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0")
+                    text("UPDATE users SET is_admin = :flag"), {"flag": False}
                 )
                 # The pre-existing (bootstrap) account becomes the first admin.
                 conn.execute(
                     text(
-                        "UPDATE users SET is_admin = 1 WHERE id = "
+                        "UPDATE users SET is_admin = :flag WHERE id = "
                         "(SELECT MIN(id) FROM users)"
-                    )
+                    ),
+                    {"flag": True},
                 )
 
     if "signals" in tables:
