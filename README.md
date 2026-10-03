@@ -19,8 +19,11 @@ A production-ready swing-trading signal application for **US equities**. It scan
 - **Eight setups from the SMA 20/50 flow system** (see [Signal engine reference](#signal-engine-reference))
   - Continuation: `UC1` / `UC2` (bullish, shallow / deep pullback), `DC1` / `DC2` (bearish).
   - Reversal: `UR1` (early upside), `DR1` (early downside), `UR2` (double top), `DR2` (double bottom).
-  - Each setup is confirmed by an **EXE** (momentum entry candle) closing beyond the **LP** (liquidity point) within a 5–6 bar time limit; bearish setups are traded via **liquid put options** (never shorting).
-- **Blended confidence** — a rating built from two factor groups: **continuation factors** (trend strength, MA alignment, pullback control, clean structure, trigger quality, participation) blended with **reversal factors** (flush intensity, liquidity sweep, reversal trigger, exhaustion, pattern quality), then adjusted for regime, sector rotation and a **counter impact** term. Labeled Low/Medium/High. See [How confidence is derived](#how-confidence-is-derived).
+  - Each setup is confirmed by an **entry-execution candle** (a momentum candle) closing beyond the **liquidity point** within a 5–6 candle time limit; bearish setups are traded via **liquid put options** (never shorting).
+- **Three timeframes** — the same rules are read on **daily**, **weekly** and **monthly** candles, with a filter on both the picks and the history pages. An in-progress candle is never analysed: a weekly setup must be confirmed by a completed week and a monthly setup by a completed month.
+- **Volume and Average True Range confirmation** — an entry candle that trades on above-average volume *and* expands beyond its Average True Range earns a bonus of up to **+6 confidence points**. The adjustment is positive-only, so a quiet but otherwise valid setup is never penalised.
+- **Retrospective accuracy** — every pick is replayed against the sessions that followed it and marked **target reached**, **stop reached**, **still open** or **expired unresolved**, with the hit rate, average win, average loss and a by-setup breakdown. When a single candle spans both levels the stop is counted first, so the hit rate is deliberately conservative.
+- **Blended confidence** — a rating built from two factor groups, adjusted for regime, sector, counter-impact and volume/range confirmation. Labeled Low/Medium/High. See [How confidence is derived](#how-confidence-is-derived).
 - **Macro & event filtering** — market regime (SPY vs 200-day MA, VIX, yield curve), sector rotation, interest-rate sensitivity, earnings-proximity suppression, and high-impact-event confidence adjustment.
 - **API key management** — enter/update Alpaca (paper/live) and optional Finnhub/Polygon/FRED keys from the UI; keys are **encrypted at rest** (Fernet), **masked** in the UI, never sent to the browser, and fall back to environment variables.
 - **Responsive dashboard** — top-20 shortlist (with sector diversity), per-setup counters, filters (direction + setup), macro/earnings widgets, and interactive charts (TradingView Lightweight Charts) with an options chain.
@@ -165,41 +168,98 @@ POLYGON_API_KEY=...   # alternative bars / options chain
 
 ## Signal engine reference
 
-The engine is the **SMA 20/50 flow system**: daily bars only, market context first, then a
-structural trigger. Definitions:
+The engine is the **SMA 20/50 flow system**: 20-period and 50-period simple moving averages set
+the market context first, then a structural trigger times the entry. Definitions:
 
 | Term | Meaning |
 |---|---|
-| **Flow** | *Positive* when price is above the 50 SMA, *Negative* when below it. |
-| **EXE** | Entry Execution — a strong momentum candle closing beyond a level (bullish candle for longs, bearish for shorts). |
-| **LP** | Liquidity Point — the structural level used as the trigger (a swept swing low for longs, a swept swing high for shorts). |
-| **Flush bar** | A large aggressive momentum candle in the trend direction (range ≥ 1.4×ATR, body ≥ 55% of range). |
-| **MF** | Majority Flush — at least 2 flush bars within the last 3. |
-| **Time limit** | The confirming EXE must appear within 5–6 bars or the setup is invalidated. |
-| **Risk** | Stop just beyond the structural invalidation point; target projected from the risk-reward ratio. |
+| **Flow** | *Positive* when price is above the 50-period simple moving average, *Negative* when below it. |
+| **Entry-execution candle** | A strong momentum candle closing beyond a level — a bullish candle for a long, a bearish candle for a short. |
+| **Liquidity point** | The structural level used as the trigger: a swept swing low for a long, a swept swing high for a short. |
+| **Flush candle** | A large aggressive momentum candle in the trend direction (range ≥ 1.4 × Average True Range, body ≥ 55% of range). |
+| **Majority flush** | At least two flush candles within the last three. |
+| **Time limit** | The confirming entry-execution candle must appear within 5–6 candles, or the setup is invalidated. |
+| **Average True Range** | The average size of a candle's full range over 14 periods; used to scale every threshold. |
+| **Risk-to-reward ratio** | How many times the risk is targeted as profit — 2.0 means risking 1 to make 2. |
+| **Risk** | The stop sits just beyond the structural invalidation point; the target is projected from the risk-to-reward ratio. |
+| **Timeframe** | The candle interval the rules are read on: daily, weekly or monthly. |
 
 ### Setups
 
 | Code | Direction | Context | Trigger |
 |---|---|---|---|
-| `UC1` | BUY | Positive flow, shallow pullback holding above the 50 SMA | Bullish EXE closes at/above the LP within 6 bars |
-| `UC2` | BUY | Positive flow, deeper pullback that tested the 50 SMA | As above, with room left to the prior impulse high |
-| `DC1` | SELL | Negative flow, shallow pullback holding below the 50 SMA | Bearish EXE closes at/below the LP within 6 bars |
-| `DC2` | SELL | Negative flow, deeper pullback that tested the 50 SMA | As above |
-| `UR1` | BUY | Sideways range, downside flush forces liquidity | Bullish EXE within 6 bars closing at/above the LP |
-| `DR1` | SELL | Sideways range, majority flush forms liquidity | Bearish EXE closing at/below the LP (no bar count) |
-| `UR2` | SELL | Double top in an up-flow, "bigger retracement" | Bearish EXE closes at/below the LP (the peak) |
-| `DR2` | BUY | Double bottom in a down-flow, majority flush | Bullish EXE within 5 bars closing at/above the LP (neckline) |
+| `UC1` | BUY | Positive flow, shallow pullback holding above the 50-period average | Bullish entry-execution candle closes at or above the liquidity point within 6 candles |
+| `UC2` | BUY | Positive flow, deeper pullback that tested the 50-period average | As above, with room left to the prior impulse high |
+| `DC1` | SELL | Negative flow, shallow pullback holding below the 50-period average | Bearish entry-execution candle closes at or below the liquidity point within 6 candles |
+| `DC2` | SELL | Negative flow, deeper pullback that tested the 50-period average | As above |
+| `UR1` | BUY | Sideways range, downside flush forces liquidity | Bullish entry-execution candle within 6 candles, closing at or above the liquidity point |
+| `DR1` | SELL | Sideways range, majority flush forms liquidity | Bearish entry-execution candle closing at or below the liquidity point (no candle count) |
+| `UR2` | SELL | Double top in an up-flow, "bigger retracement" | Bearish entry-execution candle closes at or below the liquidity point (the peak) |
+| `DR2` | BUY | Double bottom in a down-flow, majority flush | Bullish entry-execution candle within 5 candles, closing at or above the liquidity point |
 
 | Exit | Rule |
 |---|---|
-| Target | `entry ± RR × risk`, with per-setup RR of 2.0 (UC1/DC1/UR1/DR1), 2.5 (UC2/DC2) and 3.0 (UR2/DR2) |
-| Stop | Just beyond the structural point (pullback extreme / flush extreme), plus a 0.25×ATR buffer |
-| Guardrail | Setups whose structural stop is further than 15% from entry are dropped as untradeable |
+| Target | `entry ± risk-to-reward × risk`, with per-setup ratios of 2.0 (UC1/DC1/UR1/DR1), 2.5 (UC2/DC2) and 3.0 (UR2/DR2) |
+| Stop | Just beyond the structural point (pullback extreme / flush extreme), plus a 0.25 × Average True Range buffer |
+| Guardrail | Setups whose structural stop is further than the timeframe's limit are dropped as untradeable: 15% daily, 28% weekly, 45% monthly |
 
 > Thresholds are explicit, tunable constants at the top of `backend/app/core/sma_strategy.py`
-> (`MOMENTUM_BODY_RATIO`, `FLUSH_ATR_MIN`, `MAX_SETUP_BARS`, `SETUP_RR`, `MAX_RISK_PCT`, …).
-> The source rules are discretionary, so each one is documented at its implementation site.
+> (`MOMENTUM_BODY_RATIO`, `FLUSH_ATR_MIN`, `MAX_SETUP_BARS`, `SETUP_RR`,
+> `MAX_RISK_PCT_BY_TIMEFRAME`, …). The source rules are discretionary, so each one is
+> documented at its implementation site.
+
+---
+
+## Timeframes
+
+The same rules are read on three candle intervals, selectable on the **Daily View** and **History**
+pages:
+
+| Timeframe | Built from | Typical use | Minimum candles |
+|---|---|---|---|
+| **Daily** | One candle per trading day | Fastest signals, most noise | 80 |
+| **Weekly** | Daily candles aggregated per ISO week | Fewer, more durable setups | 60 |
+| **Monthly** | Daily candles aggregated per calendar month | Position-trading context | 55 |
+
+Aggregation uses the usual convention: open is the first open of the period, high and low are the
+period extremes, close is the last close, and volume is the sum. The resulting candle is stamped
+with the **last trading day** of the period, so a signal is dated to the candle it completed.
+
+An **in-progress period is never analysed** — a weekly setup must be confirmed by a completed week
+and a monthly setup by a completed month. Because a monthly list needs 55 completed months plus a
+30-candle structure lookback, a data refresh pulls roughly **six years** of daily candles
+(`BAR_HISTORY_DAYS` in `backend/app/services/refresh.py`).
+
+Higher timeframes also carry proportionally wider structural stops, so the "untradeable" guardrail
+scales with the timeframe instead of rejecting every monthly setup.
+
+> The rules are strict, so a higher timeframe can legitimately return **nothing** on the latest
+> candle. The UI says so explicitly rather than showing an empty table, and the History page still
+> lists earlier picks for that interval.
+
+---
+
+## Retrospective accuracy
+
+Every stored pick is replayed against the daily candles that followed it, so History can show
+whether the call was right.
+
+| Status | Meaning |
+|---|---|
+| **Target reached** | Price touched the target before the stop |
+| **Stop reached** | Price touched the stop before the target |
+| **Still open** | Neither level touched yet, still inside the horizon |
+| **Expired unresolved** | Neither level touched before the horizon ran out |
+
+The horizon is expressed in daily candles: **10** for daily picks, **42** (six weeks) for weekly
+and **90** (three months) for monthly.
+
+When a single candle spans both the stop and the target the **stop is counted first**. That is the
+conservative reading, and it keeps the reported hit rate from flattering itself. History shows the
+hit rate, average result, average win, average loss and a by-setup breakdown, and each resolved
+pick carries a badge with its exit price, exit date and profit or loss.
+
+Outcomes are refreshed alongside signal generation and can be recomputed on demand by an admin.
 
 ---
 
@@ -212,20 +272,21 @@ scored 0–100, mixed by the setup's family, and then adjusted for context.
 
 | Continuation factors | Measures |
 |---|---|
-| `trend_separation` | How far price sits beyond the 50 SMA, in ATRs |
-| `ma_alignment` | Separation of the 20 and 50 SMA |
+| `trend_separation` | How far price sits beyond the 50-period simple moving average, measured in Average True Range units |
+| `ma_alignment` | Separation between the 20-period and the 50-period simple moving averages |
 | `pullback_control` | How shallow and orderly the pullback was |
-| `structure_clean` | No flush bar against the trend before the trigger |
-| `trigger_strength` | EXE candle quality + how decisively and promptly it cleared the LP |
-| `participation` | Volume versus its 20-day average |
+| `structure_clean` | No aggressive counter-trend candle before the trigger |
+| `trigger_strength` | Entry-execution candle quality, how far it cleared the liquidity point, and how promptly |
+| `volume_confirmation` | Traded volume compared with its 20-period average |
+| `volatility_expansion` | Entry-execution candle range compared with the Average True Range |
 
 | Reversal factors | Measures |
 |---|---|
 | `flush_intensity` | Size and aggression of the flush into the level |
 | `liquidity_sweep` | Whether a prior swing extreme was taken out |
-| `reversal_trigger` | Recovery candle quality + how far it reclaimed past the LP |
-| `exhaustion` | RSI stretch and distance from the mean |
-| `structure` | Pattern quality (double top/bottom similarity, retracement depth) |
+| `reversal_trigger` | Recovery candle quality and how far it reclaimed past the liquidity point |
+| `exhaustion` | Relative Strength Index stretch and how far price has run from its mean |
+| `structure` | Pattern quality (double top or bottom similarity, retracement depth) |
 
 ### Step 2 — blend by setup family
 
@@ -243,9 +304,26 @@ scored 0–100, mixed by the setup's family, and then adjusted for context.
 | Regime alignment | ±8 | Market regime versus the trade direction |
 | Sector rotation | ±5 | Leading vs lagging sector |
 | **Counter impact** | −15 … +5 | Macro events and media that argue **against** the recommendation |
+| **Volume and range confirmation** | 0 … +6 | Entry candle expands past its Average True Range *and* trades above average volume |
 
-`confidence = clamp(blend + regime + sector + counter_impact, 0, 100)`, labeled Low 0–40,
-Medium 41–70, High 71–100.
+`confidence = clamp(blend + regime + sector + counter_impact + confirmation_boost, 0, 100)`,
+labeled Low 0–40, Medium 41–70, High 71–100.
+
+### Volume and Average True Range confirmation
+
+A setup is more trustworthy when the entry candle is **backed by the tape**, so this adjustment
+rewards exactly that — and only that:
+
+| Leg | Earns nothing below | Earns the full half-share at |
+|---|---|---|
+| Volume | 1.2 × its 20-period average | 2.2 × |
+| Entry candle range | 1.0 × the Average True Range | 1.8 × |
+
+Each leg contributes half of the maximum, so a candle that expands on heavy volume earns the full
+**+6**, one that is strong on volume only earns up to +3, and a quiet candle earns **0**. The term
+is **positive-only**: it can never penalise an otherwise valid setup. Both raw readings
+(`volume_ratio`, `atr_multiple`) and the awarded bonus are stored per signal and printed on the
+signal page.
 
 ### Counter impact (the "counter recommended" factor)
 
@@ -267,12 +345,13 @@ annotation's `confidence_delta` on `adjusted_confidence`.
 > Both the macro term and the media magnitude are **penalties**: they can only subtract (plus a
 > small supportive bonus for the macro term). Every anchor is a named constant at the top of
 > `backend/app/core/sma_strategy.py` (`FAMILY_WEIGHTS`, `REGIME_ADJUSTMENT_MAX`,
-> `SECTOR_ADJUSTMENT_MAX`, `COUNTER_IMPACT_MIN/MAX`), and each signal's full arithmetic is
-> printed on its page under **How confidence was derived**.
+> `SECTOR_ADJUSTMENT_MAX`, `COUNTER_IMPACT_MIN/MAX`, `VOLUME_CONFIRMATION_MIN`,
+> `ATR_EXPANSION_MIN`, `CONFIRMATION_BOOST_MAX`), and each signal's full arithmetic is printed on
+> its page under **How confidence was derived**.
 
 **Also applied:** earnings within 7 days suppress the signal entirely unless confidence > 80 and
-earnings plays are enabled; and a structural stop further than 15% from entry (`MAX_RISK_PCT`)
-drops the setup as untradeable.
+earnings plays are enabled; and a structural stop further than the timeframe's limit
+(`MAX_RISK_PCT_BY_TIMEFRAME`) drops the setup as untradeable.
 
 ---
 

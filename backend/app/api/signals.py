@@ -18,6 +18,7 @@ from ..database import get_db
 from ..models import DailyBar, EarningsEvent, MacroEvent, MacroSnapshot, Signal, User
 from ..providers.registry import resolve_market_provider
 from ..schemas import (
+    AccuracyResponse,
     BarOut,
     OptionContractOut,
     SignalDetailOut,
@@ -26,18 +27,22 @@ from ..schemas import (
     SignalOut,
     SummaryResponse,
 )
+from ..services import demo_service, outcome_service
 from ..services.credentials import resolve_credentials
 from ..services.data_service import load_bars
-from ..services import demo_service
-from .deps import get_optional_user
+from ..core.timeframes import normalise
+from .deps import get_current_admin, get_optional_user
 
 router = APIRouter(prefix="/signals", tags=["signals"])
 
 DIVERSITY_CAP_PER_SECTOR = 3
 
 
-def latest_signal_date(db: Session) -> date | None:
-    row = db.query(Signal.date).order_by(Signal.date.desc()).first()
+def latest_signal_date(db: Session, timeframe: str | None = None) -> date | None:
+    query = db.query(Signal.date)
+    if timeframe:
+        query = query.filter(Signal.timeframe == timeframe)
+    row = query.order_by(Signal.date.desc()).first()
     return row[0] if row else None
 
 
@@ -148,17 +153,24 @@ def daily_shortlist(
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
 ) -> SignalListResponse:
+    timeframe = normalise(filters.timeframe)
     if user is None:
         # Visitors who are not signed in only ever see the synthetic demo set.
         return SignalListResponse.model_validate(
-            demo_service.signals_payload(filters, limit=20, offset=0, show_all=all)
+            demo_service.signals_payload(
+                filters, limit=20, offset=0, show_all=all, timeframe=timeframe
+            )
         )
-    d = latest_signal_date(db)
+    d = latest_signal_date(db, timeframe)
     if d is None:
         return SignalListResponse(
             signals=[], total=0, limit=0, offset=0, summary=_summary(db, []).model_dump()
         )
-    query = db.query(Signal).filter(Signal.date == d).order_by(Signal.confidence.desc())
+    query = (
+        db.query(Signal)
+        .filter(Signal.date == d, Signal.timeframe == timeframe)
+        .order_by(Signal.confidence.desc())
+    )
     matched = [s for s in query.all() if _matches(s, filters)]
     limit = len(matched) if all else 20
     shortlist = matched if all else _diverse_shortlist(matched, limit)
@@ -180,14 +192,18 @@ def list_signals(
     db: Session = Depends(get_db),
     user: User | None = Depends(get_optional_user),
 ) -> SignalListResponse:
+    timeframe = normalise(filters.timeframe)
     if user is None:
+        # History for a guest: every demo pick of that timeframe, newest first.
         return SignalListResponse.model_validate(
-            demo_service.signals_payload(filters, limit=limit, offset=offset, show_all=True)
+            demo_service.history_payload(
+                filters, limit=limit, offset=offset, timeframe=timeframe
+            )
         )
-    query = db.query(Signal)
+    query = db.query(Signal).filter(Signal.timeframe == timeframe)
     if date_ is not None:
         query = query.filter(Signal.date == date_)
-    query = query.order_by(Signal.confidence.desc())
+    query = query.order_by(Signal.date.desc(), Signal.confidence.desc())
     matched = [s for s in query.all() if _matches(s, filters)]
     page = matched[offset : offset + limit]
     return SignalListResponse(
@@ -195,19 +211,45 @@ def list_signals(
         total=len(matched),
         limit=limit,
         offset=offset,
-        summary={},
+        summary=_summary(db, matched).model_dump(),
     )
 
 
 @router.get("/summary", response_model=SummaryResponse)
 def summary(
-    db: Session = Depends(get_db), user: User | None = Depends(get_optional_user)
+    timeframe: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
 ) -> SummaryResponse:
+    resolved = normalise(timeframe)
     if user is None:
-        return SummaryResponse.model_validate(demo_service.summary_payload())
-    d = latest_signal_date(db)
-    signals = db.query(Signal).filter(Signal.date == d).all() if d else []
+        return SummaryResponse.model_validate(demo_service.summary_payload(resolved))
+    d = latest_signal_date(db, resolved)
+    signals = (
+        db.query(Signal).filter(Signal.date == d, Signal.timeframe == resolved).all() if d else []
+    )
     return _summary(db, signals)
+
+
+@router.get("/accuracy", response_model=AccuracyResponse)
+def accuracy(
+    timeframe: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_optional_user),
+) -> AccuracyResponse:
+    """Retrospective hit rate: how often picks reached target rather than stop."""
+    resolved = normalise(timeframe)
+    if user is None:
+        return AccuracyResponse.model_validate(demo_service.accuracy_payload(resolved))
+    return AccuracyResponse.model_validate(outcome_service.accuracy_summary(db, resolved))
+
+
+@router.post("/outcomes", response_model=dict)
+def refresh_outcomes(
+    db: Session = Depends(get_db), _: User = Depends(get_current_admin)
+) -> dict:
+    """Replay every unsettled pick against the sessions that followed it."""
+    return outcome_service.update_outcomes(db)
 
 
 @router.get("/{signal_id}", response_model=SignalDetailOut)

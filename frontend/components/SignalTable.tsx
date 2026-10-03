@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { SignalOut } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
 import { AdjustedConfidence, ConfidenceBadge, SentimentBadge, SetupBadge, TypeBadge } from "./Badges";
+import { OutcomeBadge } from "./OutcomeBadge";
 
 function EventFlags({ signal }: { signal: SignalOut }) {
   const flags = (signal.event_flags ?? {}) as Record<string, unknown>;
@@ -40,7 +41,13 @@ function EntryCell({ signal }: { signal: SignalOut }) {
   return <div className="font-mono text-sm">{formatPrice(signal.entry)}</div>;
 }
 
-export function SignalTable({ signals }: { signals: SignalOut[] }) {
+export function SignalTable({
+  signals,
+  showOutcome = false,
+}: {
+  signals: SignalOut[];
+  showOutcome?: boolean;
+}) {
   return (
     <div className="hidden overflow-x-auto rounded-xl border border-slate-800 md:block">
       <table className="w-full min-w-[760px] text-left text-sm">
@@ -53,6 +60,7 @@ export function SignalTable({ signals }: { signals: SignalOut[] }) {
             <th className="px-4 py-3">Stop</th>
             <th className="px-4 py-3">Confidence</th>
             <th className="px-4 py-3">Events</th>
+            {showOutcome && <th className="px-4 py-3">Result</th>}
             <th className="px-4 py-3">Sector</th>
             <th className="px-4 py-3"></th>
           </tr>
@@ -94,6 +102,11 @@ export function SignalTable({ signals }: { signals: SignalOut[] }) {
                   {s.annotation && <SentimentBadge sentiment={s.annotation.sentiment} />}
                 </div>
               </td>
+              {showOutcome && (
+                <td className="px-4 py-3">
+                  <OutcomeBadge outcome={s.outcome} />
+                </td>
+              )}
               <td className="px-4 py-3 text-slate-400">{s.sector ?? "—"}</td>
               <td className="px-4 py-3 text-right">
                 <Link href={`/signals?id=${s.id}`} className="text-xs text-slate-400 hover:text-white">

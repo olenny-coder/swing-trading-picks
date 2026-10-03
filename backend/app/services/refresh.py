@@ -12,9 +12,11 @@ from datetime import date, datetime, timedelta
 from ..models import EarningsEvent, MacroEvent, Signal
 from ..providers.registry import resolve_macro_provider, resolve_market_provider
 from . import credentials as creds_svc
-from . import data_service, signal_service
+from . import data_service, outcome_service, signal_service
 
-BAR_HISTORY_DAYS = 730  # ~2 years of daily bars
+# ~6 years of daily bars: a monthly analysis needs 55 completed monthly candles
+# plus a 30-candle structure lookback, so two years is not enough.
+BAR_HISTORY_DAYS = 2200
 CALENDAR_DAYS = 90
 
 _lock = threading.Lock()
@@ -93,6 +95,8 @@ def _do_refresh(db, user_id: int) -> dict:
         db, macro, tickers, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS)
     )
     counts = signal_service.generate_signals(db, market, macro)
+    # Replay older picks so History can show whether they worked out.
+    outcomes = outcome_service.update_outcomes(db)
 
     return {
         "provider": market.name,
@@ -100,4 +104,5 @@ def _do_refresh(db, user_id: int) -> dict:
         "bars": n_bars,
         "signal_date": str(data_service.latest_trading_day(db) or today),
         "signals": counts,
+        "outcomes": outcomes,
     }

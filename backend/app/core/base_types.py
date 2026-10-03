@@ -18,3 +18,7 @@ class SignalContext:
     earnings_in_days: int | None = None  # days to next earnings, None if unknown
     allow_earnings_plays: bool = False
     backtest_win_rates: dict[str, float] = field(default_factory=dict)
+    # Candle interval being analysed (DAILY | WEEKLY | MONTHLY). Higher
+    # timeframes carry proportionally wider structural stops, so the
+    # "untradeable risk" guardrail is scaled by this.
+    timeframe: str = "DAILY"

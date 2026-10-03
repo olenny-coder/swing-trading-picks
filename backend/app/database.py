@@ -97,6 +97,19 @@ def _migrate() -> None:
 
     if "signals" in tables:
         cols = {c["name"] for c in insp.get_columns("signals")}
+        if "timeframe" not in cols or "outcome" not in cols:
+            # The unique key now includes `timeframe`, and SQLite cannot drop a
+            # constraint in place — so the table is rebuilt. Existing rows are
+            # copied across and stamped DAILY, which preserves the pick history
+            # the accuracy view reads. `CREATE TABLE ... AS SELECT` deliberately
+            # avoids copying indexes/constraints, so the old index names are
+            # released for the new table on both SQLite and PostgreSQL.
+            _rebuild_signals_table(cols)
+
+        # Re-reflect: the rebuild above replaced the table, and SQLAlchemy's
+        # inspector caches its reflection.
+        insp = inspect(engine)
+        cols = {c["name"] for c in insp.get_columns("signals")}
         if "setup" not in cols:
             with engine.begin() as conn:
                 conn.execute(
@@ -115,3 +128,39 @@ def _migrate() -> None:
             conn.execute(
                 text("UPDATE signals SET setup = 'LEGACY' WHERE setup IS NULL OR setup = ''")
             )
+            conn.execute(
+                text("UPDATE signals SET timeframe = 'DAILY' WHERE timeframe IS NULL OR timeframe = ''")
+            )
+
+
+def _rebuild_signals_table(existing_columns: set[str]) -> None:
+    """Recreate ``signals`` with the current schema, copying existing rows."""
+    from sqlalchemy import text
+
+    from .models import Signal
+
+    table = Signal.__table__
+    # Only copy columns that exist in the old table, in the new table's order.
+    copy_columns = [
+        column.name
+        for column in table.columns
+        if column.name not in ("timeframe", "outcome") and column.name in existing_columns
+    ]
+    collist = ", ".join(copy_columns)
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS signals_backup"))
+        conn.execute(text("CREATE TABLE signals_backup AS SELECT * FROM signals"))
+        conn.execute(text("DROP TABLE signals"))
+
+    table.create(bind=engine)
+
+    if copy_columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"INSERT INTO signals ({collist}, timeframe) "
+                    f"SELECT {collist}, 'DAILY' FROM signals_backup"
+                )
+            )
+            conn.execute(text("DROP TABLE signals_backup"))

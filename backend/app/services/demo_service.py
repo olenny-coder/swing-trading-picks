@@ -6,13 +6,17 @@ from the deterministic MOCK providers, and the dataset is built once and cached
 in memory (it is pure CPU work over synthetic series — nothing is written to the
 database).
 
+The demo carries a live list per timeframe (daily, weekly, monthly) **and** a set
+of earlier picks whose outcomes have already resolved, so History and the
+accuracy view are meaningful without signing in.
+
 Demo signals are given ids starting at ``DEMO_ID_BASE`` so they can never
 collide with real rows.
 """
 from __future__ import annotations
 
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from ..core.base_types import SignalContext
 from ..core.constants import (
@@ -24,15 +28,29 @@ from ..core.constants import (
 )
 from ..core.indicators import ema
 from ..core.sma_strategy import MIN_BARS, analyze_ticker
+from ..core.timeframes import (
+    DAILY,
+    TIMEFRAMES,
+    is_complete_period,
+    min_bars,
+    normalise,
+    resample,
+)
 from ..core.universe import UNIVERSE
 from ..providers.mock_provider import MockMacroProvider, MockMarketDataProvider
 from .macro_service import lagging_sectors, leading_sectors
+from .outcome_service import OPEN, STOP_HIT, TARGET_HIT, evaluate
 
 DEMO_ID_BASE = 900_000
 DEMO_LIMIT = 20
-HISTORY_DAYS = 540
+HISTORY_DAYS = 2200
 CHART_BARS = 180
 CALENDAR_DAYS = 60
+
+#: How many earlier candles per timeframe are replayed to build history.
+HISTORY_STEPS = {DAILY: 14, "WEEKLY": 12, "MONTHLY": 6}
+#: Cap on stored historical picks per timeframe, so the demo stays responsive.
+HISTORY_CAP = {DAILY: 60, "WEEKLY": 40, "MONTHLY": 20}
 
 _lock = threading.Lock()
 _cache: dict | None = None
@@ -45,6 +63,41 @@ def is_demo_signal_id(signal_id: int) -> bool:
 # ---------------------------------------------------------------------------
 # Dataset construction
 # ---------------------------------------------------------------------------
+def _history_indices(bars: list, timeframe: str, steps: int) -> list[int]:
+    """Indices of earlier bars that end a *completed* candle of this timeframe."""
+    out: list[int] = []
+    for index in range(len(bars) - 2, -1, -1):
+        if timeframe == DAILY or is_complete_period(bars[index].date, timeframe):
+            out.append(index)
+        if len(out) >= steps:
+            break
+    return out
+
+
+def _to_signal(draft, timeframe: str, candle_date: date, signal_id: int) -> dict:
+    return {
+        "id": signal_id,
+        "ticker": draft.ticker,
+        "name": draft.name,
+        "date": candle_date,
+        "type": draft.direction,
+        "setup": draft.setup,
+        "timeframe": timeframe,
+        "entry": draft.entry,
+        "target": draft.target,
+        "stop": draft.stop,
+        "confidence": draft.confidence,
+        "price": draft.price,
+        "sector": draft.sector,
+        "confidence_components": draft.confidence_components,
+        "triggered_rules": draft.triggered_rules,
+        "event_flags": draft.event_flags,
+        "option_recommendation": None,
+        "annotation": None,
+        "outcome": None,
+    }
+
+
 def _build() -> dict:
     today = date.today()
     start = today - timedelta(days=HISTORY_DAYS)
@@ -62,40 +115,52 @@ def _build() -> dict:
         macro_sentiment=0.0,
     )
 
-    drafts = []
+    next_id = DEMO_ID_BASE
+    live: dict[str, list[dict]] = {tf: [] for tf in TIMEFRAMES}
+    history: dict[str, list[dict]] = {tf: [] for tf in TIMEFRAMES}
     bars_by_ticker: dict[str, list] = {}
+
     for ticker, name, sector in UNIVERSE:
-        bars = market.get_daily_bars(ticker, start, today)
-        if len(bars) < MIN_BARS:
+        daily = market.get_daily_bars(ticker, start, today)
+        if len(daily) < MIN_BARS:
             continue
-        bars_by_ticker[ticker] = bars
-        drafts.extend(analyze_ticker(ticker, name, sector, bars, ctx))
+        bars_by_ticker[ticker] = daily
 
-    drafts.sort(key=lambda d: d.confidence, reverse=True)
-    drafts = drafts[:DEMO_LIMIT]
+        for timeframe in TIMEFRAMES:
+            ctx.timeframe = timeframe
+            series = resample(daily, timeframe)
+            if len(series) < min_bars(timeframe):
+                continue
 
-    signals = [
-        {
-            "id": DEMO_ID_BASE + i,
-            "ticker": d.ticker,
-            "name": d.name,
-            "date": today,
-            "type": d.direction,
-            "setup": d.setup,
-            "entry": d.entry,
-            "target": d.target,
-            "stop": d.stop,
-            "confidence": d.confidence,
-            "price": d.price,
-            "sector": d.sector,
-            "confidence_components": d.confidence_components,
-            "triggered_rules": d.triggered_rules,
-            "event_flags": d.event_flags,
-            "option_recommendation": None,
-            "annotation": None,
-        }
-        for i, d in enumerate(drafts)
-    ]
+            # The live list: the most recently completed candle.
+            for draft in analyze_ticker(ticker, name, sector, series, ctx):
+                live[timeframe].append(_to_signal(draft, timeframe, series[-1].date, next_id))
+                next_id += 1
+
+            # Replay earlier candles so History and the accuracy view have
+            # results that have already resolved.
+            for index in _history_indices(daily, timeframe, HISTORY_STEPS[timeframe]):
+                past_series = resample(daily[: index + 1], timeframe)
+                if len(past_series) < min_bars(timeframe):
+                    continue
+                for draft in analyze_ticker(ticker, name, sector, past_series, ctx):
+                    record = _to_signal(draft, timeframe, past_series[-1].date, next_id)
+                    next_id += 1
+                    record["outcome"] = evaluate(
+                        draft.direction,
+                        draft.entry,
+                        draft.target,
+                        draft.stop,
+                        daily[index + 1 :],
+                        timeframe,
+                    )
+                    history[timeframe].append(record)
+
+    picks: dict[str, list[dict]] = {}
+    for timeframe in TIMEFRAMES:
+        newest = sorted(live[timeframe], key=lambda s: s["confidence"], reverse=True)[:DEMO_LIMIT]
+        past = sorted(history[timeframe], key=lambda s: s["date"], reverse=True)
+        picks[timeframe] = newest + past[: HISTORY_CAP[timeframe]]
 
     events = macro.get_economic_calendar(today, today + timedelta(days=CALENDAR_DAYS))
     earnings = macro.get_earnings_calendar(
@@ -104,7 +169,7 @@ def _build() -> dict:
 
     return {
         "generated_at": today,
-        "signals": signals,
+        "signals": picks,
         "bars_by_ticker": bars_by_ticker,
         "snapshot": {
             "date": snapshot.date,
@@ -156,6 +221,17 @@ def dataset() -> dict:
         return _cache
 
 
+def _rows(timeframe: str | None) -> list[dict]:
+    return dataset()["signals"].get(normalise(timeframe), [])
+
+
+def _live_rows(timeframe: str | None) -> list[dict]:
+    """Only the most recently completed candle's picks — the 'daily view' list."""
+    rows = _rows(timeframe)
+    newest = max((s["date"] for s in rows), default=None)
+    return [s for s in rows if s["date"] == newest] if newest else []
+
+
 def _summary(signals: list[dict], snapshot: dict) -> dict:
     def count(pred) -> int:
         return sum(1 for s in signals if pred(s))
@@ -205,24 +281,104 @@ def _matches(signal: dict, filters) -> bool:
 # ---------------------------------------------------------------------------
 # Public payloads
 # ---------------------------------------------------------------------------
-def signals_payload(filters=None, limit: int = 50, offset: int = 0, show_all: bool = False) -> dict:
+def _requested_timeframe(filters, timeframe: str | None) -> str:
+    return normalise(timeframe or getattr(filters, "timeframe", None))
+
+
+def signals_payload(
+    filters=None,
+    limit: int = 50,
+    offset: int = 0,
+    show_all: bool = False,
+    timeframe: str | None = None,
+) -> dict:
+    """The live shortlist: only the most recent completed candle's picks."""
     data = dataset()
-    rows = [s for s in data["signals"] if _matches(s, filters)]
-    page = rows if show_all else rows[:DEMO_LIMIT]
-    page = page[offset : offset + limit]
+    resolved = _requested_timeframe(filters, timeframe)
+    rows = [s for s in _live_rows(resolved) if _matches(s, filters)]
     return {
-        "signals": page,
+        "signals": rows[:limit],
         "total": len(rows),
         "limit": limit,
         "offset": offset,
-        "summary": _summary(data["signals"], data["snapshot"]),
+        "summary": _summary(rows, data["snapshot"]),
         "demo": True,
     }
 
 
-def summary_payload() -> dict:
+def history_payload(
+    filters=None, limit: int = 200, offset: int = 0, timeframe: str | None = None
+) -> dict:
+    """Every stored pick of the timeframe, most recent first."""
     data = dataset()
-    return _summary(data["signals"], data["snapshot"])
+    resolved = _requested_timeframe(filters, timeframe)
+    rows = [s for s in data["signals"].get(resolved, []) if _matches(s, filters)]
+    rows.sort(key=lambda s: s["date"], reverse=True)
+    return {
+        "signals": rows[offset : offset + limit],
+        "total": len(rows),
+        "limit": limit,
+        "offset": offset,
+        "summary": _summary(rows, data["snapshot"]),
+        "demo": True,
+    }
+
+
+def summary_payload(timeframe: str | None = None) -> dict:
+    """Summary of the live shortlist, matching what the daily view displays."""
+    data = dataset()
+    return _summary(_live_rows(timeframe), data["snapshot"])
+
+
+def accuracy_from(rows: list[dict], timeframe: str) -> dict:
+    """Same shape as ``outcome_service.accuracy_summary``."""
+    evaluated = [s for s in rows if s.get("outcome")]
+    counts = {TARGET_HIT: 0, STOP_HIT: 0, OPEN: 0, "EXPIRED": 0}
+    wins: list[float] = []
+    losses: list[float] = []
+    by_setup: dict[str, dict] = {}
+
+    for signal in evaluated:
+        outcome = signal["outcome"]
+        status = outcome.get("status") or OPEN
+        counts[status] = counts.get(status, 0) + 1
+        pnl = float(outcome.get("pnl_pct") or 0.0)
+        if status == TARGET_HIT:
+            wins.append(pnl)
+        elif status == STOP_HIT:
+            losses.append(pnl)
+        bucket = by_setup.setdefault(
+            signal["setup"], {"setup": signal["setup"], "total": 0, TARGET_HIT: 0, STOP_HIT: 0}
+        )
+        bucket["total"] += 1
+        if status in (TARGET_HIT, STOP_HIT):
+            bucket[status] += 1
+
+    decided = counts[TARGET_HIT] + counts[STOP_HIT]
+    every = [float(s["outcome"].get("pnl_pct") or 0.0) for s in evaluated]
+    for bucket in by_setup.values():
+        resolved = bucket[TARGET_HIT] + bucket[STOP_HIT]
+        bucket["win_rate_pct"] = round(bucket[TARGET_HIT] / resolved * 100.0, 1) if resolved else None
+
+    return {
+        "timeframe": timeframe,
+        "evaluated": len(evaluated),
+        "target_hit": counts[TARGET_HIT],
+        "stop_hit": counts[STOP_HIT],
+        "open": counts[OPEN],
+        "expired": counts["EXPIRED"],
+        "decided": decided,
+        "win_rate_pct": round(counts[TARGET_HIT] / decided * 100.0, 1) if decided else None,
+        "avg_pnl_pct": round(sum(every) / len(every), 2) if every else None,
+        "avg_win_pct": round(sum(wins) / len(wins), 2) if wins else None,
+        "avg_loss_pct": round(sum(losses) / len(losses), 2) if losses else None,
+        "by_setup": sorted(by_setup.values(), key=lambda b: b["setup"]),
+    }
+
+
+def accuracy_payload(timeframe: str | None = None) -> dict:
+    resolved = normalise(timeframe)
+    return accuracy_from(_rows(resolved), resolved)
 
 
 def macro_payload() -> dict:
@@ -238,7 +394,11 @@ def macro_payload() -> dict:
 
 def detail_payload(signal_id: int) -> dict | None:
     data = dataset()
-    signal = next((s for s in data["signals"] if s["id"] == signal_id), None)
+    signal = None
+    for rows in data["signals"].values():
+        signal = next((s for s in rows if s["id"] == signal_id), None)
+        if signal is not None:
+            break
     if signal is None:
         return None
 
@@ -273,8 +433,10 @@ def reset_cache() -> None:
 
 __all__ = [
     "DEMO_ID_BASE",
+    "accuracy_payload",
     "dataset",
     "detail_payload",
+    "history_payload",
     "is_demo_signal_id",
     "macro_payload",
     "reset_cache",

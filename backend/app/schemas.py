@@ -101,6 +101,7 @@ class SignalOut(BaseModel):
     date: date
     type: str  # BUY | SELL
     setup: str  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2
+    timeframe: str = "DAILY"  # DAILY | WEEKLY | MONTHLY
     entry: float
     target: float
     stop: float
@@ -114,11 +115,15 @@ class SignalOut(BaseModel):
     # LLM research agent output: sentiment, risk_flags, confidence_delta,
     # adjusted_confidence, rationale, model, created_at.
     annotation: dict | None = None
+    # Retrospective result: status (TARGET_HIT/STOP_HIT/OPEN/EXPIRED), exit
+    # price, profit/loss percentage, and how long the idea took.
+    outcome: dict | None = None
 
 
 class SignalFilters(BaseModel):
     type: str | None = None  # BUY | SELL
     setup: str | None = None  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2
+    timeframe: str | None = None  # DAILY | WEEKLY | MONTHLY
     sector: str | None = None
     min_confidence: float | None = Field(default=None, ge=0, le=100)
     exclude_earnings_week: bool = False
@@ -236,6 +241,23 @@ class SignalDetailOut(BaseModel):
     doji_highlight: bool = False
     option_chain: list[OptionContractOut] = []
     demo: bool = False
+
+
+class AccuracyResponse(BaseModel):
+    """Retrospective hit rate: how often picks reached target rather than stop."""
+
+    timeframe: str | None = None
+    evaluated: int
+    target_hit: int
+    stop_hit: int
+    open: int
+    expired: int
+    decided: int
+    win_rate_pct: float | None = None
+    avg_pnl_pct: float | None = None
+    avg_win_pct: float | None = None
+    avg_loss_pct: float | None = None
+    by_setup: list[dict] = []
 
 
 # ---------------------------------------------------------------------------

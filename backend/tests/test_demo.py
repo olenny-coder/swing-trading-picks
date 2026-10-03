@@ -131,22 +131,64 @@ class TestDemoDataset(unittest.TestCase):
 
         demo_service.reset_cache()
         data = demo_service.dataset()
-        for signal in data["signals"]:
-            self.assertTrue(demo_service.is_demo_signal_id(signal["id"]))
+        for timeframe, rows in data["signals"].items():
+            for signal in rows:
+                self.assertTrue(demo_service.is_demo_signal_id(signal["id"]))
+                self.assertEqual(signal["timeframe"], timeframe)
         self.assertFalse(demo_service.is_demo_signal_id(1))
+
+    def test_demo_covers_every_timeframe(self):
+        """Every timeframe is present as a key; higher ones may legitimately be
+        empty when no setup completed on the sample data."""
+        from app.core.timeframes import TIMEFRAMES
+        from app.services import demo_service
+
+        demo_service.reset_cache()
+        data = demo_service.dataset()
+        self.assertEqual(set(data["signals"]), set(TIMEFRAMES))
+        self.assertTrue(data["signals"]["DAILY"], "the daily demo list should not be empty")
 
     def test_demo_signals_carry_the_blended_confidence(self):
         from app.services import demo_service
 
         demo_service.reset_cache()
-        signals = demo_service.dataset()["signals"]
-        self.assertTrue(signals)
-        for signal in signals:
-            components = signal["confidence_components"]
-            self.assertIn("continuation", components)
-            self.assertIn("reversal", components)
-            self.assertIn("counter_impact", components)
-            self.assertEqual(components["final"], signal["confidence"])
+        data = demo_service.dataset()
+        for rows in data["signals"].values():
+            for signal in rows:
+                components = signal["confidence_components"]
+                self.assertIn("continuation", components)
+                self.assertIn("reversal", components)
+                self.assertIn("counter_impact", components)
+                self.assertIn("confirmation_boost", components)
+                self.assertEqual(components["final"], signal["confidence"])
+
+    def test_demo_history_has_resolved_outcomes(self):
+        """The demo must include past picks whose result is already known."""
+        from app.services import demo_service
+
+        demo_service.reset_cache()
+        rows = demo_service.dataset()["signals"]["DAILY"]
+        resolved = [s for s in rows if (s.get("outcome") or {}).get("status") in ("TARGET_HIT", "STOP_HIT")]
+        self.assertTrue(resolved, "expected some demo picks to have resolved")
+        for signal in resolved:
+            outcome = signal["outcome"]
+            self.assertIn(outcome["status"], ("TARGET_HIT", "STOP_HIT"))
+            self.assertIsNotNone(outcome["pnl_pct"])
+            self.assertIn("exit_date", outcome)
+
+    def test_demo_accuracy_summary_is_consistent(self):
+        from app.services import demo_service
+
+        demo_service.reset_cache()
+        summary = demo_service.accuracy_payload("DAILY")
+        self.assertGreater(summary["evaluated"], 0)
+        self.assertEqual(
+            summary["decided"], summary["target_hit"] + summary["stop_hit"]
+        )
+        if summary["decided"]:
+            self.assertIsNotNone(summary["win_rate_pct"])
+            self.assertGreaterEqual(summary["win_rate_pct"], 0.0)
+            self.assertLessEqual(summary["win_rate_pct"], 100.0)
 
 
 if __name__ == "__main__":

@@ -13,9 +13,12 @@ import { RefreshButton } from "@/components/RefreshButton";
 import { ResearchButton } from "@/components/ResearchButton";
 import { DemoBanner } from "@/components/DemoBanner";
 import { Collapsible } from "@/components/Collapsible";
+import { TimeframeTabs } from "@/components/TimeframeTabs";
+import { TIMEFRAME_DESCRIPTIONS, TIMEFRAME_LABELS, type Timeframe } from "@/lib/types";
 
 export default function HomePage() {
   const { isAdmin } = useAuth();
+  const [timeframe, setTimeframe] = useState<Timeframe>("DAILY");
   const [data, setData] = useState<SignalListResponse | null>(null);
   const [macro, setMacro] = useState<MacroDashboard | null>(null);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -30,6 +33,7 @@ export default function HomePage() {
       setLoading(true);
       const params: Record<string, string | number | boolean | undefined> = {
         all: showAll,
+        timeframe,
         type: filters.type,
         setup: filters.setup,
         sector: filters.sector,
@@ -46,7 +50,7 @@ export default function HomePage() {
         .finally(() => setLoading(false));
     }, 350);
     return () => clearTimeout(t);
-  }, [filters, showAll, reload]);
+  }, [filters, showAll, reload, timeframe]);
 
   useEffect(() => {
     api
@@ -61,7 +65,9 @@ export default function HomePage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold sm:text-2xl">Daily Signals</h1>
+          <h1 className="text-xl font-semibold sm:text-2xl">
+            {TIMEFRAME_LABELS[timeframe]} Signals
+          </h1>
           <p className="text-sm text-slate-400">
             Top swing-trading setups for liquid US equities · {summary?.generated_at ?? "—"}
           </p>
@@ -88,6 +94,11 @@ export default function HomePage() {
         </div>
       </div>
 
+      <div className="space-y-2">
+        <TimeframeTabs value={timeframe} onChange={setTimeframe} />
+        <p className="text-xs text-slate-500">{TIMEFRAME_DESCRIPTIONS[timeframe]}</p>
+      </div>
+
       <SummaryCards summary={summary} />
 
       {data?.demo && <DemoBanner />}
@@ -101,7 +112,15 @@ export default function HomePage() {
       {error && <p className="text-sm text-red-400">{error}</p>}
       {loading && <p className="text-sm text-slate-400">Loading signals…</p>}
       {!loading && data && data.signals.length === 0 && (
-        <p className="text-sm text-slate-400">No signals match the current filters.</p>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-400">
+          <p className="font-medium text-slate-300">
+            No {TIMEFRAME_LABELS[timeframe].toLowerCase()} setups completed on the latest candle.
+          </p>
+          <p className="mt-1 text-xs">
+            The rules are deliberately strict, so a quiet interval can legitimately produce nothing.
+            Try another interval, relax the filters, or check the History page for earlier picks.
+          </p>
+        </div>
       )}
 
       {data && data.signals.length > 0 && (

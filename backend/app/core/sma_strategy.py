@@ -73,6 +73,13 @@ SIDEWAYS_MAX_SMA_GAP = 0.030  # |SMA20-SMA50| / SMA50 under this = sideways
 DOUBLE_TOLERANCE = 0.02       # peaks/troughs within 2% count as a "double"
 STOP_BUFFER_ATR = 0.25
 MAX_RISK_PCT = 0.15         # reject setups whose structural stop is further than this
+#: A structural stop is naturally wider on a higher timeframe, so the guardrail
+#: scales with the candle interval rather than rejecting every monthly setup.
+MAX_RISK_PCT_BY_TIMEFRAME: dict[str, float] = {
+    "DAILY": 0.15,
+    "WEEKLY": 0.28,
+    "MONTHLY": 0.45,
+}
 
 SETUP_RR = {
     SETUP_UC1: 2.0, SETUP_UC2: 2.5, SETUP_DC1: 2.0, SETUP_DC2: 2.5,
@@ -97,20 +104,21 @@ DEFAULT_BACKTEST_WIN_RATES = {
 # Which group dominates depends on the setup family (see FAMILY_WEIGHTS), and a
 # small set of context adjustments is applied on top of the blend.
 CONTINUATION_FACTORS = (
-    "trend_separation",   # price beyond the 50 SMA, measured in ATRs
-    "ma_alignment",       # SMA20 vs SMA50 separation, in ATRs
-    "pullback_control",   # how shallow and orderly the pullback was
-    "structure_clean",    # no counter-flush against the trend
-    "trigger_strength",   # EXE quality + LP break margin + promptness
-    "participation",      # volume confirmation
+    "trend_separation",      # price beyond the 50-period SMA, measured in ATRs
+    "ma_alignment",          # 20-period vs 50-period SMA separation, in ATRs
+    "pullback_control",      # how shallow and orderly the pullback was
+    "structure_clean",       # no counter-flush against the trend
+    "trigger_strength",      # entry-candle quality + LP break margin + promptness
+    "volume_confirmation",   # volume versus its 20-period average
+    "volatility_expansion",  # entry-candle range versus Average True Range
 )
 
 REVERSAL_FACTORS = (
-    "flush_intensity",    # size/aggression of the flush into the level
-    "liquidity_sweep",    # did it take out a prior swing extreme
-    "reversal_trigger",   # EXE quality in the recovery direction + reclaim
-    "exhaustion",         # RSI extreme and extension from the mean
-    "structure",          # double pattern / bigger retracement / compression
+    "flush_intensity",       # size/aggression of the flush into the level
+    "liquidity_sweep",       # did it take out a prior swing extreme
+    "reversal_trigger",      # recovery-candle quality + reclaim distance
+    "exhaustion",            # Relative Strength Index stretch and distance from the mean
+    "structure",             # double pattern / bigger retracement / compression
 )
 
 FAMILY_WEIGHTS: dict[str, tuple[float, float]] = {
@@ -130,6 +138,18 @@ REGIME_ADJUSTMENT_MAX = 8.0
 SECTOR_ADJUSTMENT_MAX = 5.0
 COUNTER_IMPACT_MIN = -15.0
 COUNTER_IMPACT_MAX = 5.0
+
+# Volume / Average True Range confirmation.
+#
+# A setup is more trustworthy when the entry candle is *backed*: it expands
+# beyond its recent Average True Range AND trades on above-average volume. Each
+# leg contributes nothing until it clears its threshold, so this adjustment can
+# only ever add confidence — it never penalises a quiet but valid setup.
+VOLUME_CONFIRMATION_MIN = 1.2    # multiple of the 20-period average volume
+VOLUME_CONFIRMATION_FULL = 2.2
+ATR_EXPANSION_MIN = 1.0          # entry-candle range as a multiple of ATR
+ATR_EXPANSION_FULL = 1.8
+CONFIRMATION_BOOST_MAX = 6.0     # maximum confidence points added
 
 
 @dataclass
@@ -265,13 +285,30 @@ def _trend_context_factor(close: float, sma50_value: float, atr_value: float, si
     return _centred((close - sma50_value) * sign / atr_value, 0.0, 2.0)
 
 
-def _participation_factor(volume_ratio: float) -> float:
-    """Volume versus its 20-day average: 1.0x is neutral (50)."""
-    return _centred(volume_ratio, 1.0, 0.8)
+def _volume_confirmation_factor(volume_ratio: float) -> float:
+    """Volume versus its 20-period average: 1.0x is neutral (50)."""
+    return _centred(volume_ratio, 1.0, 0.9)
+
+
+def _volatility_expansion_factor(exe_range_atr: float) -> float:
+    """Entry-candle range versus Average True Range: 1.0x ATR is neutral (50)."""
+    return _centred(exe_range_atr, 1.0, 0.8)
+
+
+def _confirmation_boost(volume_ratio: float, exe_range_atr: float) -> float:
+    """Confidence added when the entry candle is backed by volume and range.
+
+    Returns 0..``CONFIRMATION_BOOST_MAX``. Each leg is silent below its own
+    threshold, so a setup that is merely average on both counts earns nothing
+    and loses nothing.
+    """
+    volume_leg = _scale(volume_ratio, VOLUME_CONFIRMATION_MIN, VOLUME_CONFIRMATION_FULL)
+    range_leg = _scale(exe_range_atr, ATR_EXPANSION_MIN, ATR_EXPANSION_FULL)
+    return round(CONFIRMATION_BOOST_MAX * (0.5 * volume_leg + 0.5 * range_leg) / 100.0, 1)
 
 
 def _trigger_factor(exe_body: float, lp_margin_atr: float, bars_since: int, max_bars: int) -> float:
-    """EXE candle quality + how decisively and promptly it cleared the LP."""
+    """Entry-candle quality + how decisively and promptly it cleared the LP."""
     promptness = _scale(max_bars - bars_since + 1, 1, max_bars)
     return (
         0.40 * _scale(exe_body, 0.50, 0.90)
@@ -360,17 +397,21 @@ def _counter_drivers(direction: str, sector: str | None, ctx: SignalContext) -> 
 
 def _finish(
     ticker, name, sector, setup, entry, target, stop, price, volume,
-    volume_ratio, factors, triggered, ctx,
+    volume_ratio, exe_range_atr, factors, triggered, ctx,
 ) -> SignalDraft | None:
     direction = DIRECTION_BY_SETUP[setup]
     rr = SETUP_RR.get(setup, 2.0)
     # Guardrail: a structural stop that is implausibly far makes the trade
-    # untradeable, so the setup is dropped rather than reported.
-    if entry > 0 and abs(entry - stop) / entry > MAX_RISK_PCT:
+    # untradeable, so the setup is dropped rather than reported. The limit
+    # scales with the timeframe, because a monthly stop is legitimately wider
+    # than a daily one.
+    risk_limit = MAX_RISK_PCT_BY_TIMEFRAME.get(ctx.timeframe or "DAILY", MAX_RISK_PCT)
+    if entry > 0 and abs(entry - stop) / entry > risk_limit:
         return None
 
     factors = dict(factors or {})
-    factors.setdefault("participation", _participation_factor(volume_ratio))
+    factors.setdefault("volume_confirmation", _volume_confirmation_factor(volume_ratio))
+    factors.setdefault("volatility_expansion", _volatility_expansion_factor(exe_range_atr))
 
     continuation = _group_score(factors, CONTINUATION_FACTORS)
     reversal = _group_score(factors, REVERSAL_FACTORS)
@@ -380,8 +421,13 @@ def _finish(
     regime_adj = _regime_adjustment(direction, ctx.regime)
     sector_adj = _sector_adjustment(direction, sector, ctx)
     counter = _counter_impact(direction, sector, ctx)
+    # Only ever positive: a candle that expands on heavy volume earns extra
+    # confidence, a quiet one is left alone.
+    confirmation = _confirmation_boost(volume_ratio, exe_range_atr)
 
-    conf = round(max(0.0, min(100.0, blend + regime_adj + sector_adj + counter)), 1)
+    conf = round(
+        max(0.0, min(100.0, blend + regime_adj + sector_adj + counter + confirmation)), 1
+    )
     if _earnings_suppressed(ctx, conf):
         return None
 
@@ -394,6 +440,9 @@ def _finish(
         "regime_adjustment": round(regime_adj, 1),
         "sector_adjustment": round(sector_adj, 1),
         "counter_impact": round(counter, 1),
+        "confirmation_boost": round(confirmation, 1),
+        "volume_ratio": round(volume_ratio, 2),
+        "atr_multiple": round(exe_range_atr, 2),
         "backtest_win_rate": round(
             ctx.backtest_win_rates.get(setup, DEFAULT_BACKTEST_WIN_RATES.get(setup, 0.55)) * 100.0,
             1,
@@ -540,6 +589,7 @@ def _detect_continuation(
 
     # --- Factor groups feeding the blended confidence ------------------------
     sign = 1.0 if long_side else -1.0
+    exe_range_atr = (highs[last] - lows[last]) / a
     exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
     lp_margin_atr = max(0.0, (c - lp) * sign / a)
     pull_extreme = lows[b] if long_side else highs[b]
@@ -571,7 +621,7 @@ def _detect_continuation(
     ]
     return _finish(
         ticker, name, sector, setup, entry, target, stop, c, volumes[last],
-        volume_ratio, factors, rules, ctx,
+        volume_ratio, exe_range_atr, factors, rules, ctx,
     )
 
 
@@ -619,6 +669,7 @@ def _detect_early_reversal(
                  "bullish_exe", "close_at_or_above_lp", f"exe_within_{last - f}_bars"]
         flush_atr = (highs[f] - lows[f]) / max(atr[f] or 0.0, 1e-9)
         depth_atr = (max(highs[f : last + 1]) - min(lows[f : last + 1])) / a
+        exe_range_atr = (highs[last] - lows[last]) / a
         exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
         reclaim_atr = max(0.0, (c - lp) / a)
         factors = {
@@ -662,6 +713,7 @@ def _detect_early_reversal(
                  "close_at_or_below_lp", "no_bar_count_required"]
         flush_atr = (highs[f] - lows[f]) / max(atr[f] or 0.0, 1e-9)
         depth_atr = (max(highs[f : last + 1]) - min(lows[f : last + 1])) / a
+        exe_range_atr = (highs[last] - lows[last]) / a
         exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
         reclaim_atr = max(0.0, (lp - c) / a)
         factors = {
@@ -680,7 +732,7 @@ def _detect_early_reversal(
     volume_ratio = (volumes[last] / avg_vol) if avg_vol else 1.0
     return _finish(
         ticker, name, sector, setup, entry, target, stop, c, volumes[last],
-        volume_ratio, factors, rules, ctx,
+        volume_ratio, exe_range_atr, factors, rules, ctx,
     )
 
 
@@ -734,6 +786,7 @@ def _detect_double(
         target = min(target, max(sma50[last] * 1.02, entry + 1.0 * a)) if sma50[last] > entry else target
         rules = ["negative_flow", "majority_flush", "double_bottom", "neckline_breakout",
                  "bullish_exe", "close_at_or_above_lp", f"exe_within_{last - l2}_bars"]
+        exe_range_atr = (highs[last] - lows[last]) / a
         exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
         reclaim_atr = max(0.0, (c - lp) / a)
         base_depth_atr = abs(max(highs[l1], highs[l2]) - min(lows[l1], lows[l2])) / a
@@ -787,6 +840,7 @@ def _detect_double(
         target = _project(entry, risk, SETUP_RR[setup], SIGNAL_SELL)
         rules = ["positive_flow", "double_top", "bigger_retracement", "partial_overlap",
                  "bearish_exe", "close_at_or_below_lp", "fails_at_lp"]
+        exe_range_atr = (highs[last] - lows[last]) / a
         exe_body = abs(c - opens[last]) / max(highs[last] - lows[last], 1e-9)
         reclaim_atr = max(0.0, (lp - c) / a)
         pattern_depth_atr = (max(highs[h1], highs[h2]) - lows[trough]) / a
@@ -808,7 +862,7 @@ def _detect_double(
     volume_ratio = (volumes[last] / avg_vol) if avg_vol else 1.0
     return _finish(
         ticker, name, sector, setup, entry, target, stop, c, volumes[last],
-        volume_ratio, factors, rules, ctx,
+        volume_ratio, exe_range_atr, factors, rules, ctx,
     )
 
 

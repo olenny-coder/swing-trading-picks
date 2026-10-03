@@ -117,8 +117,11 @@ class DailyBar(Base):
 class Signal(Base):
     __tablename__ = "signals"
     __table_args__ = (
-        UniqueConstraint("ticker", "date", "setup", name="uq_signal_ticker_date_setup"),
+        UniqueConstraint(
+            "ticker", "date", "setup", "timeframe", name="uq_signal_ticker_date_setup_timeframe"
+        ),
         Index("ix_signal_date_confidence", "date", "confidence"),
+        Index("ix_signal_timeframe_date", "timeframe", "date"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -126,6 +129,8 @@ class Signal(Base):
     date: Mapped[date] = mapped_column(Date, index=True)  # signal date
     type: Mapped[str] = mapped_column(String(32), index=True)  # BUY | SELL
     setup: Mapped[str] = mapped_column(String(16), index=True, default="UC1")  # UC1..DR2
+    # DAILY | WEEKLY | MONTHLY — the candle interval the setup was read on.
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, default="DAILY")
 
     entry: Mapped[float] = mapped_column(Float)
     target: Mapped[float] = mapped_column(Float)
@@ -143,6 +148,8 @@ class Signal(Base):
     option_recommendation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # LLM research agent output (sentiment, risk flags, confidence adjustment).
     annotation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Retrospective result: did the pick reach its target or its stop?
+    outcome: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

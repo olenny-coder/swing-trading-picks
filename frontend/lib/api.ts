@@ -7,6 +7,7 @@
 // Set NEXT_PUBLIC_API_BASE only when the frontend is hosted separately.
 
 import type {
+  AccuracyResponse,
   MacroDashboard,
   ResearchStatus,
   SettingsResponse,
@@ -120,6 +121,11 @@ export const api = {
   },
 
   summary: () => request<Summary>("/api/signals/summary"),
+
+  accuracy: (timeframe?: string) =>
+    request<AccuracyResponse>(
+      `/api/signals/accuracy${timeframe ? `?timeframe=${timeframe}` : ""}`,
+    ),
 
   signalDetail: (id: number | string) => request<SignalDetail>(`/api/signals/${id}`),
 

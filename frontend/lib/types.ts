@@ -2,6 +2,60 @@
 
 export type SignalType = "BUY" | "SELL";
 
+/** Candle interval the setup was read on. */
+export type Timeframe = "DAILY" | "WEEKLY" | "MONTHLY";
+
+export const TIMEFRAMES: Timeframe[] = ["DAILY", "WEEKLY", "MONTHLY"];
+
+export const TIMEFRAME_LABELS: Record<Timeframe, string> = {
+  DAILY: "Daily",
+  WEEKLY: "Weekly",
+  MONTHLY: "Monthly",
+};
+
+export const TIMEFRAME_DESCRIPTIONS: Record<Timeframe, string> = {
+  DAILY: "One candle per trading day — the fastest signals and the most noise.",
+  WEEKLY: "One candle per week — fewer setups, and more durable ones.",
+  MONTHLY: "One candle per month — position-trading context over years.",
+};
+
+/** Retrospective result of a pick. */
+export type OutcomeStatus = "TARGET_HIT" | "STOP_HIT" | "OPEN" | "EXPIRED";
+
+export interface SignalOutcome {
+  status: OutcomeStatus;
+  exit_price: number | null;
+  exit_date: string | null;
+  bars_held: number;
+  pnl_pct: number;
+  max_favourable_pct: number;
+  max_adverse_pct: number;
+  evaluated_at: string;
+}
+
+export interface SetupAccuracy {
+  setup: string;
+  total: number;
+  TARGET_HIT: number;
+  STOP_HIT: number;
+  win_rate_pct: number | null;
+}
+
+export interface AccuracyResponse {
+  timeframe: string | null;
+  evaluated: number;
+  target_hit: number;
+  stop_hit: number;
+  open: number;
+  expired: number;
+  decided: number;
+  win_rate_pct: number | null;
+  avg_pnl_pct: number | null;
+  avg_win_pct: number | null;
+  avg_loss_pct: number | null;
+  by_setup: SetupAccuracy[];
+}
+
 /** SMA 20/50 flow-system setups. */
 export type SetupCode = "UC1" | "UC2" | "DC1" | "DC2" | "UR1" | "DR1" | "UR2" | "DR2";
 
@@ -25,6 +79,7 @@ export interface SignalOut {
   date: string;
   type: SignalType;
   setup: SetupCode;
+  timeframe: Timeframe;
   entry: number;
   target: number;
   stop: number;
@@ -37,6 +92,8 @@ export interface SignalOut {
   option_recommendation: OptionRecommendation | null;
   /** LLM research-agent output; null until the agent has annotated this signal. */
   annotation: SignalAnnotation | null;
+  /** Retrospective result once the pick has resolved. */
+  outcome: SignalOutcome | null;
 }
 
 export type Sentiment = "bullish" | "bearish" | "neutral" | "mixed";

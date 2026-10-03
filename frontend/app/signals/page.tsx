@@ -11,38 +11,22 @@ import {
   SentimentBadge,
   SetupBadge,
   TypeBadge,
-  flagLabel,
 } from "@/components/Badges";
 import { Collapsible } from "@/components/Collapsible";
 import { DemoBanner } from "@/components/DemoBanner";
-import { SETUP_LABELS } from "@/lib/types";
+import { OutcomeBadge } from "@/components/OutcomeBadge";
+import { SETUP_LABELS, TIMEFRAME_LABELS } from "@/lib/types";
 import { confidenceLabel, formatDate, formatPrice } from "@/lib/format";
+import {
+  CONFIDENCE_ADJUSTMENT_LABELS,
+  CONTINUATION_FACTORS,
+  GROUP_LABELS,
+  REVERSAL_FACTORS,
+  flagLabel,
+  ruleLabel,
+} from "@/lib/labels";
 
 const PriceChart = dynamic(() => import("@/components/PriceChart"), { ssr: false });
-
-// Factor groups behind the blended confidence. Keys must match
-// backend/app/core/sma_strategy.py (CONTINUATION_FACTORS / REVERSAL_FACTORS).
-const CONTINUATION_FACTORS: Record<string, string> = {
-  trend_separation: "Price beyond the 50 SMA, measured in ATRs",
-  ma_alignment: "Separation of the 20 and 50 SMA",
-  pullback_control: "How shallow and orderly the pullback was",
-  structure_clean: "No counter-flush against the trend",
-  trigger_strength: "Entry candle quality + how decisively it cleared the LP",
-  participation: "Volume versus its 20-day average",
-};
-
-const REVERSAL_FACTORS: Record<string, string> = {
-  flush_intensity: "Size and aggression of the flush into the level",
-  liquidity_sweep: "Whether a prior swing extreme was taken out",
-  reversal_trigger: "Recovery candle quality + how far it reclaimed",
-  exhaustion: "RSI stretch and distance from the mean",
-  structure: "Pattern quality (double top/bottom, retracement depth)",
-};
-
-const GROUP_LABELS: Record<string, string> = {
-  continuation: "Continuation",
-  reversal: "Reversal",
-};
 
 function signed(value: number, digits = 1): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -110,26 +94,34 @@ function ConfidenceDerivation({
   const adjustments = [
     {
       key: "regime_adjustment",
-      label: "Regime alignment",
+      label: CONFIDENCE_ADJUSTMENT_LABELS.regime_adjustment,
       value: components.regime_adjustment ?? 0,
     },
     {
       key: "sector_adjustment",
-      label: "Sector rotation",
+      label: CONFIDENCE_ADJUSTMENT_LABELS.sector_adjustment,
       value: components.sector_adjustment ?? 0,
     },
     {
       key: "counter_impact",
-      label: "Counter impact (macro/media against the trade)",
+      label: CONFIDENCE_ADJUSTMENT_LABELS.counter_impact,
       value: components.counter_impact ?? 0,
     },
+    {
+      key: "confirmation_boost",
+      label: CONFIDENCE_ADJUSTMENT_LABELS.confirmation_boost,
+      value: components.confirmation_boost ?? 0,
+    },
   ];
+
+  const volumeRatio = components.volume_ratio;
+  const atrMultiple = components.atr_multiple;
 
   return (
     <div className="space-y-5">
       <p className="text-sm text-slate-400">
         Confidence is a <strong className="text-slate-200">blended rating</strong> built from two
-        factor groups, each scored 0–100:
+        factor groups, each scored from 0 to 100:
       </p>
       <ul className="space-y-1 text-sm text-slate-400">
         <li>
@@ -143,10 +135,45 @@ function ConfidenceDerivation({
         </li>
       </ul>
       <p className="text-sm text-slate-400">
-        The two are weighted according to the setup family (continuation setups lean on continuation
-        evidence; reversal setups lean on reversal evidence), then a small set of context adjustments
-        is applied.
+        The two groups are weighted according to the setup family (continuation setups lean on
+        continuation evidence, reversal setups lean on reversal evidence). A set of context
+        adjustments is then applied, including a bonus when the entry candle is confirmed by both
+        traded volume and an expanded range.
       </p>
+
+      {(volumeRatio != null || atrMultiple != null) && (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm">
+          <div className="text-xs uppercase tracking-wide text-slate-400">
+            Volume and range confirmation
+          </div>
+          <div className="mt-1 flex flex-wrap gap-4 text-slate-300">
+            <span>
+              Volume:{" "}
+              <span className="font-mono">
+                {volumeRatio != null ? `${volumeRatio.toFixed(2)}× its 20-period average` : "—"}
+              </span>
+            </span>
+            <span>
+              Entry candle range:{" "}
+              <span className="font-mono">
+                {atrMultiple != null
+                  ? `${atrMultiple.toFixed(2)}× the Average True Range`
+                  : "—"}
+              </span>
+            </span>
+            <span>
+              Bonus awarded:{" "}
+              <span className="font-mono text-emerald-400">
+                {signed(components.confirmation_boost ?? 0)}
+              </span>
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            A setup earns the bonus only once volume clears 1.2× its average and the entry candle
+            expands past one Average True Range; it is never a penalty.
+          </p>
+        </div>
+      )}
 
       {/* Step 1 — the blend */}
       <div className="overflow-x-auto">
@@ -271,7 +298,8 @@ function SignalDetail() {
             <TypeBadge type={s.type} />
           </div>
           <p className="text-sm text-slate-400">
-            {s.name} · {s.sector ?? "Unknown sector"} · {formatDate(s.date)}
+            {s.name} · {s.sector ?? "Unknown sector"} · {formatDate(s.date)} ·{" "}
+            {TIMEFRAME_LABELS[s.timeframe] ?? "Daily"} interval
           </p>
           <p className="text-xs text-slate-500">{SETUP_LABELS[s.setup] ?? s.setup}</p>
         </div>
@@ -285,6 +313,22 @@ function SignalDetail() {
         <Level label="Target" value={formatPrice(s.target)} color="text-emerald-400" />
         <Level label="Stop" value={formatPrice(s.stop)} color="text-red-400" />
       </div>
+
+      {s.outcome && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+          <span className="text-xs uppercase tracking-wide text-slate-400">Result</span>
+          <OutcomeBadge outcome={s.outcome} />
+          <span className="text-xs text-slate-500">
+            {s.outcome.exit_date ? `closed ${formatDate(s.outcome.exit_date)}` : ""}
+            {s.outcome.bars_held ? ` · held ${s.outcome.bars_held} session(s)` : ""}
+            {s.outcome.max_favourable_pct != null
+              ? ` · best ${signed(s.outcome.max_favourable_pct)}% · worst ${signed(
+                  s.outcome.max_adverse_pct,
+                )}%`
+              : ""}
+          </span>
+        </div>
+      )}
 
       {data.demo && <DemoBanner />}
 
@@ -313,7 +357,7 @@ function SignalDetail() {
             />
           </div>
           <p className="mt-3 text-xs text-slate-400">
-            Open interest {s.option_recommendation.open_interest ?? "—"} · IV{" "}
+            Open interest {s.option_recommendation.open_interest ?? "—"} · Implied volatility{" "}
             {s.option_recommendation.implied_volatility
               ? `${(s.option_recommendation.implied_volatility * 100).toFixed(1)}%`
               : "—"}
@@ -444,7 +488,10 @@ function SignalDetail() {
         </div>
       </Collapsible>
 
-      <Collapsible title="Price chart & indicators" subtitle="EMA 20 / 50 overlay">
+      <Collapsible
+        title="Price chart and indicators"
+        subtitle="20-period and 50-period exponential moving averages"
+      >
         {data.doji_highlight && (
           <p className="mb-2 text-xs text-violet-400">Doji candle detected in this series.</p>
         )}
@@ -453,9 +500,9 @@ function SignalDetail() {
 
       <Collapsible title="Triggered rules" subtitle={`${(s.triggered_rules ?? []).length} matched`}>
         <ul className="space-y-1">
-          {(s.triggered_rules ?? []).map((r) => (
-            <li key={r} className="text-sm text-slate-300">
-              • {r.replace(/_/g, " ")}
+          {(s.triggered_rules ?? []).map((rule) => (
+            <li key={rule} className="text-sm text-slate-300">
+              • {ruleLabel(rule)}
             </li>
           ))}
           {(s.triggered_rules ?? []).length === 0 && (

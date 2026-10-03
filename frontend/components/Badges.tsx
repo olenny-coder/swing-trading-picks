@@ -99,8 +99,3 @@ export function AdjustedConfidence({
     </span>
   );
 }
-
-/** Render a risk-flag slug as readable text. */
-export function flagLabel(flag: string): string {
-  return flag.replace(/_/g, " ");
-}

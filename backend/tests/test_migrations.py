@@ -16,7 +16,11 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-os.environ.setdefault("SECRET_KEY", "migration-test-secret-key-longer-than-32-bytes")
+# Bind BEFORE importing app.* — whichever module imports app.database first owns
+# the engine for the whole test process. Without this, running this module on its
+# own would point the app at the developer's real swingtrader.db.
+os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(tempfile.mkdtemp(), 'migrations.db')}"
+os.environ["SECRET_KEY"] = "migration-test-secret-key-longer-than-32-bytes"
 
 from sqlalchemy import create_engine, inspect, text  # noqa: E402
 
@@ -49,13 +53,27 @@ def _legacy_db():
         )
         conn.execute(
             text(
+                # A realistic `signals` table from the previous release: every
+                # column that existed before timeframes/outcomes, including the
+                # NOT NULL ones the copy has to carry across.
                 "CREATE TABLE signals ("
-                "id INTEGER PRIMARY KEY, ticker VARCHAR(16), "
-                "type VARCHAR(32), setup VARCHAR(16))"
+                "id INTEGER PRIMARY KEY, ticker VARCHAR(16) NOT NULL, "
+                "date DATE NOT NULL, type VARCHAR(32) NOT NULL, "
+                "setup VARCHAR(16), entry FLOAT NOT NULL, target FLOAT NOT NULL, "
+                "stop FLOAT NOT NULL, confidence FLOAT NOT NULL, price FLOAT NOT NULL, "
+                "sector VARCHAR(64), name VARCHAR(128), "
+                "confidence_components JSON, triggered_rules JSON, "
+                "event_flags JSON, option_recommendation JSON, "
+                "created_at DATETIME NOT NULL)"
             )
         )
         conn.execute(
-            text("INSERT INTO signals (id, ticker, type, setup) VALUES (1, 'AAPL', 'PUT', 'LEGACY')")
+            text(
+                "INSERT INTO signals (id, ticker, date, type, setup, entry, target, stop, "
+                "confidence, price, created_at) VALUES "
+                "(1, 'AAPL', '2026-01-02', 'PUT', 'LEGACY', 100, 90, 105, 70, 100, "
+                "'2026-01-02 12:00:00')"
+            )
         )
         conn.execute(text("CREATE TABLE macro_events (id INTEGER PRIMARY KEY)"))
     return engine

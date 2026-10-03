@@ -19,10 +19,12 @@ _ctx = SignalContext(regime="neutral", backtest_win_rates={})
 _START = date(2025, 1, 1)
 
 
-def _bars(pcts, start: float = 100.0):
+def _bars(pcts, start: float = 100.0, volume: float = 1_000_000.0, last_volume: float | None = None):
     """Build a chronological bar series from a list of per-bar fractional moves.
 
     Wicks are proportional to the body so fractal pivots have unique extremes.
+    ``last_volume`` spikes the final (entry) bar, which is how the volume
+    confirmation booster is exercised.
     """
     out = []
     price = start
@@ -32,6 +34,7 @@ def _bars(pcts, start: float = 100.0):
         body = abs(c - o)
         hi = max(o, c) + 0.25 * body + 0.001 * price
         lo = min(o, c) - 0.25 * body - 0.001 * price
+        vol = last_volume if (last_volume is not None and i == len(pcts) - 1) else volume
         out.append(
             Bar(
                 date=_START + timedelta(days=i),
@@ -39,7 +42,7 @@ def _bars(pcts, start: float = 100.0):
                 high=hi,
                 low=lo,
                 close=c,
-                volume=1_000_000.0,
+                volume=vol,
             )
         )
         price = c
@@ -51,8 +54,8 @@ def _wave(n, trend, amplitude=0.015, period=10.0):
     return [trend + amplitude * math.sin(2 * math.pi * i / period) for i in range(n)]
 
 
-def _run(pcts):
-    bars = _bars(pcts)
+def _run(pcts, **bar_kwargs):
+    bars = _bars(pcts, **bar_kwargs)
     return analyze_ticker("TEST", "Test Co", "Technology", bars, _ctx)
 
 
@@ -139,7 +142,11 @@ class TestSmaStrategy(unittest.TestCase):
             0.0,
             min(
                 100.0,
-                c["blend"] + c["regime_adjustment"] + c["sector_adjustment"] + c["counter_impact"],
+                c["blend"]
+                + c["regime_adjustment"]
+                + c["sector_adjustment"]
+                + c["counter_impact"]
+                + c["confirmation_boost"],
             ),
         )
         self.assertAlmostEqual(c["final"], expected_final, places=1)
@@ -228,6 +235,58 @@ class TestSmaStrategy(unittest.TestCase):
         d = drafts[0]
         self.assertEqual(d.event_flags.get("direction"), SIGNAL_SELL)
         self.assertEqual(d.event_flags.get("setup"), d.setup)
+
+
+    # -- volume and Average True Range confirmation -----------------------
+    def test_volume_backing_adds_confidence(self):
+        quiet = _run(UC1_SERIES)[0]
+        backed = _run(UC1_SERIES, last_volume=4_000_000.0)[0]
+        self.assertGreater(
+            backed.confidence_components["confirmation_boost"],
+            quiet.confidence_components["confirmation_boost"],
+        )
+        self.assertGreater(backed.confidence, quiet.confidence)
+
+    def test_average_volume_earns_no_volume_credit(self):
+        from app.core.sma_strategy import (
+            VOLUME_CONFIRMATION_FULL,
+            VOLUME_CONFIRMATION_MIN,
+            _scale,
+        )
+
+        self.assertEqual(_scale(1.0, VOLUME_CONFIRMATION_MIN, VOLUME_CONFIRMATION_FULL), 0.0)
+
+    def test_confirmation_boost_thresholds(self):
+        from app.core.sma_strategy import CONFIRMATION_BOOST_MAX, _confirmation_boost
+
+        # Below both thresholds, and exactly at them, nothing is added.
+        self.assertEqual(_confirmation_boost(1.0, 0.8), 0.0)
+        self.assertEqual(_confirmation_boost(1.2, 1.0), 0.0)
+        # Fully backed on both legs earns the maximum.
+        self.assertEqual(_confirmation_boost(2.5, 2.0), CONFIRMATION_BOOST_MAX)
+        # Halfway on one leg only.
+        half = _confirmation_boost(1.7, 0.5)
+        self.assertGreater(half, 0.0)
+        self.assertLess(half, CONFIRMATION_BOOST_MAX)
+
+    def test_confirmation_boost_is_never_negative(self):
+        from app.core.sma_strategy import _confirmation_boost
+
+        self.assertEqual(_confirmation_boost(0.0, 0.0), 0.0)
+        self.assertGreaterEqual(_confirmation_boost(0.4, 0.2), 0.0)
+
+    def test_volume_and_range_readings_are_reported(self):
+        d = _run(UC1_SERIES, last_volume=4_000_000.0)[0]
+        c = d.confidence_components
+        self.assertIn("volume_ratio", c)
+        self.assertIn("atr_multiple", c)
+        self.assertGreater(c["volume_ratio"], 1.0)
+        self.assertGreater(c["atr_multiple"], 1.0)
+
+    def test_volume_and_range_are_continuation_factors(self):
+        c = _run(UC1_SERIES, last_volume=4_000_000.0)[0].confidence_components
+        self.assertIn("factor_volume_confirmation", c)
+        self.assertIn("factor_volatility_expansion", c)
 
 
 if __name__ == "__main__":
