@@ -31,13 +31,13 @@ from ..services.credentials import (
     upsert_credential,
     delete_credential,
 )
-from .deps import get_current_user
+from .deps import get_current_admin
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("", response_model=SettingsResponse)
-def get_settings_state(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> SettingsResponse:
+def get_settings_state(user: User = Depends(get_current_admin), db: Session = Depends(get_db)) -> SettingsResponse:
     masked = masked_credentials(db, user.id)
     alpaca = next((c for c in masked if c.provider == "alpaca"), None)
     settings = get_settings()
@@ -53,7 +53,7 @@ def get_settings_state(user: User = Depends(get_current_user), db: Session = Dep
 def save_credential(
     provider: str,
     body: CredentialUpsert,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> CredentialOut:
     if provider != body.provider:
@@ -79,7 +79,7 @@ def save_credential(
 
 @router.delete("/credentials/{provider}", status_code=204)
 def remove_credential(
-    provider: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    provider: str, user: User = Depends(get_current_admin), db: Session = Depends(get_db)
 ) -> None:
     delete_credential(db, user.id, provider)
 
@@ -87,7 +87,7 @@ def remove_credential(
 @router.post("/test", response_model=TestConnectionResult)
 def test_connection(
     body: TestConnectionRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> TestConnectionResult:
     creds = resolve_credentials(db, user.id)

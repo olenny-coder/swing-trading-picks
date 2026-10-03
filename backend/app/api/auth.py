@@ -30,13 +30,18 @@ def me(user: User = Depends(get_current_user)) -> User:
 
 
 def bootstrap_admin(db: Session) -> None:
-    """Create the initial admin user on first run if none exists."""
+    """Create the initial admin user on first run if none exists.
+
+    This account is the first administrator; it is the one that can add further
+    authorized users via ``/api/users``.
+    """
     settings = get_settings()
     if db.query(User).count() == 0:
         user = User(
             username=settings.admin_username,
             hashed_password=security.hash_password(settings.admin_password),
             is_active=True,
+            is_admin=True,
         )
         db.add(user)
         db.commit()

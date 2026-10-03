@@ -35,12 +35,13 @@ A production-ready swing-trading signal application for **US equities**. It scan
 
 ## Access model
 
-| Area | Visitor (no login) | Admin (logged in) |
-|---|---|---|
-| Daily view, History, Macro, Charts | ✅ **synthetic DEMO data only** | ✅ live data |
-| Refresh data button | — | ✅ |
-| Research agent button | — | ✅ |
-| Settings / API keys | — | ✅ |
+| Area | Visitor (no login) | Authorized user | Admin |
+|---|---|---|---|
+| Daily view, History, Macro, Charts | ✅ **synthetic DEMO data only** | ✅ live data | ✅ live data |
+| Refresh data button | — | — | ✅ |
+| Research agent button | — | — | ✅ |
+| Settings / API keys | — | — | ✅ |
+| Users (add / disable / promote) | — | — | ✅ |
 
 **Anonymous visitors never see live signals.** Every public read endpoint checks for a valid
 token: with one you get the real shortlist from the database, without one you get a cached
@@ -51,8 +52,22 @@ collide with real rows, and an anonymous request for a real signal id returns 40
 a logged-out browser sees the demo, not a 401. The UI shows a **Demo** banner whenever the
 payload is synthetic.
 
-Sign in at `/login` (default `admin` / `changeme`) to see live signals, refresh data, run the
-research agent, or manage keys.
+### Adding authorized users
+
+The account created from `ADMIN_USERNAME` / `ADMIN_PASSWORD` is the **first administrator**.
+Sign in as an admin and open **Users** to:
+
+- **add a user** — username (3–64 chars, letters/digits/`.`/`_`/`-`) and a password of 8+ characters; tick *Administrator* to give them full privileges
+- **disable / re-enable** an account (a disabled user's existing token stops working immediately)
+- **promote / demote** between member and admin
+- **reset a password**
+- **delete** an account (its stored API credentials go with it)
+
+Guards: usernames are unique (case-insensitive), you cannot delete your own account, and the
+**last active administrator** can never be demoted, disabled or deleted — so an admin cannot
+lock everyone out of the management screens. Non-admins get `403` from the admin-only endpoints
+(`/api/users`, `/api/settings`, `/api/refresh`, `/api/backtest`, `/api/research`), and the
+**Users** and **Settings** links only appear in the nav for admins.
 
 ---
 

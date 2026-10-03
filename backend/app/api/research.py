@@ -17,7 +17,7 @@ from ..models import ApiCredential, Signal, User
 from ..providers.groq_provider import GroqError
 from ..schemas import ResearchRequest, ResearchStatusResponse
 from ..services import research_service
-from .deps import get_current_user
+from .deps import get_current_admin
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -59,7 +59,7 @@ def research_status(db: Session = Depends(get_db)) -> ResearchStatusResponse:
 @router.post("/run", response_model=ResearchStatusResponse)
 def run_research(
     body: ResearchRequest | None = None,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> ResearchStatusResponse:
     settings = get_settings()
@@ -90,7 +90,7 @@ def run_research(
 
 @router.post("/test")
 def test_research(
-    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    user: User = Depends(get_current_admin), db: Session = Depends(get_db)
 ) -> dict:
     """One tiny round-trip so the Settings page can verify the key."""
     provider = research_service.resolve_provider(db, user.id)
@@ -105,7 +105,7 @@ def test_research(
 
 @router.delete("", response_model=ResearchStatusResponse)
 def clear_research(
-    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    user: User = Depends(get_current_admin), db: Session = Depends(get_db)
 ) -> ResearchStatusResponse:
     research_service.clear_annotations(db)
     return research_status(db)

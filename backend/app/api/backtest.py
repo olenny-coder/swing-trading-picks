@@ -17,7 +17,7 @@ from ..services.data_service import load_bars, resolve_universe
 from ..services.macro_service import build_signal_context
 from ..providers.registry import resolve_macro_provider, resolve_market_provider
 from ..services.credentials import resolve_credentials
-from .deps import get_current_user
+from .deps import get_current_admin
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
@@ -27,7 +27,7 @@ _DEFAULT_TICKER_SAMPLE = 30
 @router.post("", response_model=BacktestResultOut)
 def run(
     req: BacktestRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> BacktestResultOut:
     creds = resolve_credentials(db, user.id)

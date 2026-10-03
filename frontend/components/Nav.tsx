@@ -11,7 +11,10 @@ const PUBLIC_LINKS = [
   { href: "/macro", label: "Macro" },
 ];
 
-const ADMIN_LINKS = [{ href: "/settings", label: "Settings" }];
+const ADMIN_LINKS = [
+  { href: "/settings", label: "Settings" },
+  { href: "/users", label: "Users" },
+];
 
 function NavLink({
   href,
@@ -36,9 +39,8 @@ function NavLink({
 
 export function Nav() {
   const pathname = usePathname();
-  const { token, logout } = useAuth();
+  const { token, isAdmin, logout } = useAuth();
   const [open, setOpen] = useState(false);
-  const isAdmin = Boolean(token);
   const links = isAdmin ? [...PUBLIC_LINKS, ...ADMIN_LINKS] : PUBLIC_LINKS;
 
   return (

@@ -64,6 +64,9 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(128))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Admins manage users, API keys, data refreshes and the research agent.
+    # Non-admin ("authorized") users can sign in and see live data.
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     credentials: Mapped[list["ApiCredential"]] = relationship(

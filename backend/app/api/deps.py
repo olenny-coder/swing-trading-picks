@@ -59,3 +59,17 @@ def get_optional_user(
     if user is None or not user.is_active:
         return None
     return user
+
+
+def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    """Require a signed-in user with the admin role.
+
+    Non-admin ("authorized") users can read live data, but only admins may
+    manage users, API keys, refreshes or the research agent.
+    """
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator privileges required",
+        )
+    return user

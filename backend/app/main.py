@@ -16,7 +16,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .api import auth, backtest, macro, refresh, research, settings as settings_router, signals
+from .api import (
+    auth,
+    backtest,
+    macro,
+    refresh,
+    research,
+    settings as settings_router,
+    signals,
+    users,
+)
 from .api.auth import bootstrap_admin
 from .config import get_settings
 from .database import SessionLocal, init_db
@@ -68,6 +77,7 @@ app.include_router(macro.router, prefix=API_PREFIX)
 app.include_router(backtest.router, prefix=API_PREFIX)
 app.include_router(refresh.router, prefix=API_PREFIX)
 app.include_router(research.router, prefix=API_PREFIX)
+app.include_router(users.router, prefix=API_PREFIX)
 
 
 @app.get("/api/health", tags=["health"])

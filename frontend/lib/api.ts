@@ -14,6 +14,7 @@ import type {
   SignalListResponse,
   Summary,
   TestConnectionResult,
+  UserOut,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
@@ -37,19 +38,29 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit & { silent?: boolean } = {},
+): Promise<T> {
+  const { silent, ...init } = options;
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> | undefined),
+    ...(init.headers as Record<string, string> | undefined),
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   if (res.status === 401) {
-    // Token invalid/expired: clear it and redirect to login.
+    // Token invalid/expired: clear it. Only bounce to the login page for
+    // explicit actions — a background probe (e.g. "who am I?") must leave a
+    // logged-out visitor on the demo view rather than force a login screen.
     setToken(null);
-    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    if (
+      !silent &&
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/login")
+    ) {
       window.location.href = "/login";
     }
     throw new ApiError(401, "Unauthorized");
@@ -74,6 +85,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+
+  me: () => request<UserOut>("/api/auth/me", { silent: true }),
+
+  // --- user management (admin only) -------------------------------------
+  listUsers: () => request<UserOut[]>("/api/users"),
+
+  createUser: (body: { username: string; password: string; is_admin?: boolean }) =>
+    request<UserOut>("/api/users", { method: "POST", body: JSON.stringify(body) }),
+
+  updateUser: (
+    id: number,
+    body: { password?: string; is_active?: boolean; is_admin?: boolean },
+  ) => request<UserOut>(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+
+  deleteUser: (id: number) => request<void>(`/api/users/${id}`, { method: "DELETE" }),
 
   dailySignals: (params: Record<string, string | number | boolean | undefined> = {}) => {
     const qs = new URLSearchParams();

@@ -24,6 +24,25 @@ class UserOut(BaseModel):
 
     id: int
     username: str
+    is_admin: bool = False
+    is_active: bool = True
+    created_at: datetime | None = None
+
+
+class UserCreate(BaseModel):
+    """Create an authorized user (admin only)."""
+
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
+    password: str = Field(min_length=8, max_length=128)
+    is_admin: bool = False
+
+
+class UserUpdate(BaseModel):
+    """Partial update of a user (admin only); omit a field to leave it unchanged."""
+
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    is_active: bool | None = None
+    is_admin: bool | None = None
 
 
 # ---------------------------------------------------------------------------

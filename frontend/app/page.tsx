@@ -15,7 +15,7 @@ import { DemoBanner } from "@/components/DemoBanner";
 import { Collapsible } from "@/components/Collapsible";
 
 export default function HomePage() {
-  const { token } = useAuth();
+  const { isAdmin } = useAuth();
   const [data, setData] = useState<SignalListResponse | null>(null);
   const [macro, setMacro] = useState<MacroDashboard | null>(null);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
@@ -83,8 +83,8 @@ export default function HomePage() {
           >
             All
           </button>
-          {token && <RefreshButton onDone={() => setReload((r) => r + 1)} />}
-          {token && <ResearchButton onDone={() => setReload((r) => r + 1)} />}
+          {isAdmin && <RefreshButton onDone={() => setReload((r) => r + 1)} />}
+          {isAdmin && <ResearchButton onDone={() => setReload((r) => r + 1)} />}
         </div>
       </div>
 

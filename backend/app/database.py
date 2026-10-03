@@ -73,6 +73,21 @@ def _migrate() -> None:
                     text("ALTER TABLE macro_events ADD COLUMN sentiment VARCHAR(16) DEFAULT 'neutral'")
                 )
 
+    if "users" in tables:
+        cols = {c["name"] for c in insp.get_columns("users")}
+        if "is_admin" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0")
+                )
+                # The pre-existing (bootstrap) account becomes the first admin.
+                conn.execute(
+                    text(
+                        "UPDATE users SET is_admin = 1 WHERE id = "
+                        "(SELECT MIN(id) FROM users)"
+                    )
+                )
+
     if "signals" in tables:
         cols = {c["name"] for c in insp.get_columns("signals")}
         if "setup" not in cols:

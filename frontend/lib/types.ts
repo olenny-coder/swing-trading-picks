@@ -197,9 +197,17 @@ export interface MacroDashboard {
   demo?: boolean;
 }
 
+/** An account that can sign in. Admins manage users; members just read live data. */
+export interface UserOut {
+  id: number;
+  username: string;
+  is_admin: boolean;
+  is_active: boolean;
+  created_at?: string | null;
+}
+
 export interface CredentialOut {
-  provider: string;
-  has_key: boolean;
+  provider: string;  has_key: boolean;
   key_masked: string | null;
   secret_masked: string | null;
   is_paper: boolean | null;
