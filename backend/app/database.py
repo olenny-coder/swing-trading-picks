@@ -80,6 +80,10 @@ def _migrate() -> None:
                 conn.execute(
                     text("ALTER TABLE signals ADD COLUMN setup VARCHAR(16) DEFAULT 'LEGACY'")
                 )
+        if "annotation" not in cols:
+            # LLM research agent output (JSON: sentiment, risk flags, delta).
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE signals ADD COLUMN annotation JSON"))
         # Collapse legacy signal types onto the BUY/SELL direction model.
         with engine.begin() as conn:
             conn.execute(text("UPDATE signals SET type = 'SELL' WHERE type = 'PUT'"))

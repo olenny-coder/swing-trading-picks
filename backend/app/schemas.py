@@ -92,6 +92,9 @@ class SignalOut(BaseModel):
     triggered_rules: list | None = None
     event_flags: dict | None = None
     option_recommendation: dict | None = None
+    # LLM research agent output: sentiment, risk_flags, confidence_delta,
+    # adjusted_confidence, rationale, model, created_at.
+    annotation: dict | None = None
 
 
 class SignalFilters(BaseModel):
@@ -261,3 +264,32 @@ class OrderRequest(BaseModel):
     ticker: str
     side: str  # buy | put
     qty: float = 1.0
+
+
+# ---------------------------------------------------------------------------
+# LLM research agent
+# ---------------------------------------------------------------------------
+class ResearchRequest(BaseModel):
+    """Optional narrowing of a research pass."""
+
+    signal_ids: list[int] | None = None
+    limit: int | None = Field(default=None, ge=1, le=100)
+    force: bool = False  # re-annotate signals that already have an annotation
+
+
+class ResearchStatusResponse(BaseModel):
+    enabled: bool
+    configured: bool
+    model: str
+    running: bool
+    total_signals: int
+    annotated_signals: int
+    pending_signals: int
+    max_confidence_delta: float
+    max_signals_per_run: int
+    sentiments: list[str]
+    risk_flags: list[str]
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    last_result: dict | None = None
+    error: str | None = None

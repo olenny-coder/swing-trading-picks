@@ -35,6 +35,40 @@ export interface SignalOut {
   triggered_rules: string[] | null;
   event_flags: Record<string, unknown> | null;
   option_recommendation: OptionRecommendation | null;
+  /** LLM research-agent output; null until the agent has annotated this signal. */
+  annotation: SignalAnnotation | null;
+}
+
+export type Sentiment = "bullish" | "bearish" | "neutral" | "mixed";
+
+export interface SignalAnnotation {
+  sentiment: Sentiment;
+  risk_flags: string[];
+  confidence_delta: number;
+  base_confidence: number;
+  adjusted_confidence: number;
+  supports_setup: boolean;
+  rationale: string;
+  model?: string;
+  created_at?: string;
+}
+
+export interface ResearchStatus {
+  enabled: boolean;
+  configured: boolean;
+  model: string;
+  running: boolean;
+  total_signals: number;
+  annotated_signals: number;
+  pending_signals: number;
+  max_confidence_delta: number;
+  max_signals_per_run: number;
+  sentiments: string[];
+  risk_flags: string[];
+  started_at: string | null;
+  finished_at: string | null;
+  last_result: Record<string, unknown> | null;
+  error: string | null;
 }
 
 export interface OptionRecommendation {

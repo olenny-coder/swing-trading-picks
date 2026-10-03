@@ -189,11 +189,13 @@ export default function SettingsPage() {
 
       {/* Optional providers */}
       <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-        <h2 className="font-semibold">Optional data providers</h2>
+        <h2 className="font-semibold">Optional providers</h2>
         <p className="mt-1 text-xs text-slate-400">
-          Finnhub (economic/earnings calendars), Polygon (options/alt data), FRED (interest rates).
+          Finnhub (economic/earnings calendars), Polygon (options/alt data), FRED (interest rates),
+          Groq (free-tier LLM that annotates signals with sentiment, risk flags and a confidence
+          adjustment). Keys are encrypted at rest.
         </p>
-        {["finnhub", "polygon", "fred"].map((provider) => (
+        {["finnhub", "polygon", "fred", "groq"].map((provider) => (
           <div key={provider} className="mt-4 flex flex-col gap-2 border-t border-slate-800 pt-4 first:mt-3 first:border-t-0 first:pt-0 sm:flex-row sm:items-end">
             <div className="flex-1">
               <span className="mb-1 block text-xs text-slate-400">{provider.toUpperCase()} API key</span>

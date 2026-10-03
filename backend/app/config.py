@@ -45,6 +45,23 @@ class Settings(BaseSettings):
     polygon_api_key: str = ""
     fred_api_key: str = ""
 
+    # --- LLM research agent (Groq free tier) ---------------------------------
+    # Groq's OpenAI-compatible endpoint. Free plan: 30 RPM / 1K RPD and a tight
+    # tokens-per-minute budget, so prompts are kept small and calls sequential.
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_timeout_seconds: float = 45.0
+    groq_max_retries: int = 2
+
+    # Research agent behaviour
+    llm_research_enabled: bool = True
+    llm_research_max_signals: int = 20      # per run
+    llm_research_max_tokens: int = 700      # completion budget per signal
+    llm_max_confidence_delta: float = 15.0  # hard clamp on the LLM's adjustment
+    # Pause between per-signal calls; keeps a batch inside Groq's free TPM budget.
+    llm_research_pause_seconds: float = 1.0
+
     # Scheduler cron expressions (UTC).
     # 12:30 UTC = 8:30 PM Singapore time (SGT, UTC+8). Ingest first, then macro,
     # then signal generation on the most recent completed US trading day.

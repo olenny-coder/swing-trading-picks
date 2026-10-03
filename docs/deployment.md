@@ -75,6 +75,7 @@ Keep this string — you'll set it as `DATABASE_URL` in two places (Render and G
    | `ALPACA_PAPER` | `true` |
    | `ADMIN_USERNAME` | `admin` |
    | `ADMIN_PASSWORD` | a strong password |
+   | `GROQ_API_KEY` | *(optional)* free key from [console.groq.com/keys](https://console.groq.com/keys) — enables the LLM research agent |
 
    > `CORS_ORIGINS` is **not** needed: the UI and API are same-origin.
 

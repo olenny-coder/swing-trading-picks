@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { SignalOut } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
-import { ConfidenceBadge, SetupBadge, TypeBadge } from "./Badges";
+import { AdjustedConfidence, ConfidenceBadge, SentimentBadge, SetupBadge, TypeBadge } from "./Badges";
 
 function EventFlags({ signal }: { signal: SignalOut }) {
   const flags = (signal.event_flags ?? {}) as Record<string, unknown>;
@@ -78,10 +78,21 @@ export function SignalTable({ signals }: { signals: SignalOut[] }) {
               <td className="px-4 py-3 font-mono">{formatPrice(s.target)}</td>
               <td className="px-4 py-3 font-mono">{formatPrice(s.stop)}</td>
               <td className="px-4 py-3">
-                <ConfidenceBadge value={s.confidence} />
+                <div className="space-y-1">
+                  <ConfidenceBadge value={s.confidence} />
+                  {s.annotation && (
+                    <AdjustedConfidence
+                      base={s.annotation.base_confidence}
+                      adjusted={s.annotation.adjusted_confidence}
+                    />
+                  )}
+                </div>
               </td>
               <td className="px-4 py-3">
-                <EventFlags signal={s} />
+                <div className="space-y-1">
+                  <EventFlags signal={s} />
+                  {s.annotation && <SentimentBadge sentiment={s.annotation.sentiment} />}
+                </div>
               </td>
               <td className="px-4 py-3 text-slate-400">{s.sector ?? "—"}</td>
               <td className="px-4 py-3 text-right">

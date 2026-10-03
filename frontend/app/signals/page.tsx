@@ -5,7 +5,14 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import type { SignalDetail } from "@/lib/types";
-import { ConfidenceBadge, SetupBadge, TypeBadge } from "@/components/Badges";
+import {
+  AdjustedConfidence,
+  ConfidenceBadge,
+  SentimentBadge,
+  SetupBadge,
+  TypeBadge,
+  flagLabel,
+} from "@/components/Badges";
 import { Collapsible } from "@/components/Collapsible";
 import { SETUP_LABELS } from "@/lib/types";
 import { confidenceLabel, formatDate, formatPrice } from "@/lib/format";
@@ -216,6 +223,61 @@ function SignalDetail() {
           Polygon.io key is required), so only the underlying price levels are shown.
         </div>
       )}
+
+      <Collapsible
+        title="LLM research"
+        subtitle={
+          s.annotation
+            ? `${s.annotation.sentiment} · ${s.annotation.model ?? "model"}`
+            : "not run yet"
+        }
+        defaultOpen={Boolean(s.annotation)}
+      >
+        {s.annotation ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <SentimentBadge sentiment={s.annotation.sentiment} />
+              <AdjustedConfidence
+                base={s.annotation.base_confidence}
+                adjusted={s.annotation.adjusted_confidence}
+              />
+              <span className="text-xs text-slate-500">
+                engine score vs LLM-adjusted score (adjustment bounded by the server)
+              </span>
+            </div>
+
+            {s.annotation.risk_flags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {s.annotation.risk_flags.map((flag) => (
+                  <span
+                    key={flag}
+                    className="rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300"
+                  >
+                    {flagLabel(flag)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">No risk flags raised.</p>
+            )}
+
+            {s.annotation.rationale && (
+              <p className="text-sm text-slate-300">{s.annotation.rationale}</p>
+            )}
+
+            <p className="text-xs text-slate-500">
+              {s.annotation.model}
+              {s.annotation.created_at ? ` · ${s.annotation.created_at}` : ""} · generated
+              commentary, informational only — not financial advice.
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-400">
+            This signal has not been annotated yet. An admin can run the research agent from the
+            Daily View (requires a Groq API key).
+          </p>
+        )}
+      </Collapsible>
 
       <Collapsible title="Price chart & indicators" subtitle="EMA 20 / 50 overlay">
         {data.doji_highlight && (

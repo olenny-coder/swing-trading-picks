@@ -14,6 +14,7 @@ from ..database import get_db
 from ..models import User
 from ..providers.finnhub_provider import FinnhubMacroProvider
 from ..providers.fred_provider import FredMacroProvider
+from ..providers.groq_provider import GroqProvider
 from ..providers.polygon_provider import PolygonMarketDataProvider
 from ..providers.registry import resolve_market_provider
 from ..schemas import (
@@ -57,7 +58,7 @@ def save_credential(
 ) -> CredentialOut:
     if provider != body.provider:
         raise HTTPException(status_code=400, detail="Provider in path and body must match")
-    if provider not in ("alpaca", "finnhub", "polygon", "fred"):
+    if provider not in ("alpaca", "finnhub", "polygon", "fred", "groq"):
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
     if provider == "alpaca" and not body.secret_key:
         raise HTTPException(status_code=422, detail="Alpaca requires an API secret key")
@@ -111,6 +112,21 @@ def test_connection(
         if not key:
             return TestConnectionResult(provider=provider, ok=False, message="No FRED API key configured")
         ok, msg, detail = FredMacroProvider(key).test_connection()
+    elif provider == "groq":
+        entry = creds.get("groq") or {}
+        key = entry.get("api_key")
+        if not key:
+            return TestConnectionResult(
+                provider=provider, ok=False, message="No Groq API key configured"
+            )
+        settings_obj = get_settings()
+        ok, msg, detail = GroqProvider(
+            key,
+            model=entry.get("model") or settings_obj.groq_model,
+            base_url=settings_obj.groq_base_url,
+            timeout=settings_obj.groq_timeout_seconds,
+            max_retries=settings_obj.groq_max_retries,
+        ).test_connection()
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
 

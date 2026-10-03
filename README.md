@@ -27,6 +27,7 @@ A production-ready swing-trading signal application for **US equities**. It scan
 - **Backtesting** — event-aware replay with win rate, avg return, max drawdown, profit factor, Sharpe, and walk-forward-capable CLI.
 - **Scheduling** — APScheduler daily jobs (ingestion, macro, signal generation), plus a GitHub Actions cron entrypoint.
 - **Public read / admin control** — the daily view, history, macro dashboard, and charts are **readable without logging in**; only the admin (signed-in) can refresh data or change API keys/settings.
+- **LLM research agent (optional, Groq free tier)** — annotates existing signals with a news-style `sentiment`, up to four whitelisted `risk_flags`, and a **bounded confidence adjustment** (±15) shown alongside the engine score, with a short rationale. See [LLM research agent](#llm-research-agent-groq-free-tier).
 - **Collapsible sections & hamburger nav** — every major section can be expanded/collapsed, the header carries a hamburger menu at all screen sizes, and each signal page ends with a **"How confidence was derived"** breakdown showing the weighted sub-score math.
 - **One-service deployment** — FastAPI serves both the API and the exported frontend, so the app runs on **Render + Neon with no Vercel and no Node server**.
 
@@ -180,6 +181,55 @@ structural trigger. Definitions:
 
 ---
 
+## LLM research agent (Groq free tier)
+
+An optional agent that **annotates existing signals** — it never invents new ones:
+
+| Field | What it is |
+|---|---|
+| `sentiment` | The model's near-term view of the **stock**: `bullish` / `bearish` / `neutral` / `mixed` |
+| `risk_flags` | 0–4 concrete risks from a **fixed vocabulary** (`earnings_soon`, `extended_move`, `wide_stop`, `weak_volume`, `counter_trend`, `overbought`, `event_gap_risk`, …) |
+| `confidence_delta` | **Bounded** adjustment (±15 by default) to how likely the setup is to work **in its stated direction** |
+| `adjusted_confidence` | `engine confidence + delta`, clamped to 0–100 |
+| `rationale` | ≤280 characters, tied to the numbers supplied |
+
+Get a free key at **[console.groq.com/keys](https://console.groq.com/keys)**, then set `GROQ_API_KEY`
+(or paste it under **Settings → Optional providers** — it's Fernet-encrypted at rest like the other keys).
+
+**How it works**
+
+1. The admin clicks **◆ Research signals** on the Daily View (or `POST /api/research/run`).
+2. For each signal the backend builds a **compact brief** — setup, direction, entry/stop/target,
+   R:R, engine confidence components, triggered rules, last 8 closes, RSI/ATR, distance from the
+   20/50 SMA, 5-day and 20-day change, volume ratio, regime, VIX, earnings proximity, macro
+   sentiment — and asks Groq for a JSON verdict.
+3. The run happens in a **background thread** (Groq free-tier calls are sequential), and the UI
+   polls `GET /api/research/status`. Results appear on the table, cards and the signal page.
+
+**Free-tier notes.** Groq caps requests *and* tokens per minute, so prompts stay small, calls are
+sequential with a configurable pause (`LLM_RESEARCH_PAUSE_SECONDS`), 429/5xx are retried with
+backoff honouring `Retry-After`, and a run processes at most `LLM_RESEARCH_MAX_SIGNALS` (default 20).
+Confirmed free-plan models include `openai/gpt-oss-120b` (default), `openai/gpt-oss-20b` and
+`qwen/qwen3.8-27b`; set `GROQ_MODEL` to switch. If your key lacks access to a model, the error is
+returned per-signal and surfaced in the status response — it never breaks signal generation.
+
+**Safety.** Model output is treated as **untrusted data**: sentiment is whitelisted, flag names are
+whitelisted and capped, the delta is clamped and NaN-guarded, and the rationale is length-capped and
+stripped of newlines. The engine's own `confidence` is never overwritten — the adjusted value is
+stored beside it in `Signal.annotation` so both stay auditable. The agent is **informational only
+and is not financial advice**.
+
+**Endpoints**
+
+| Method | Path | Access |
+|---|---|---|
+| `GET` | `/api/research/status` | Public — configured? model, annotated/pending counts, last run |
+| `POST` | `/api/research/run` | Admin — start a pass (`{limit?, signal_ids?, force?}`) |
+| `POST` | `/api/research/test` | Admin — one tiny round-trip to verify the key |
+| `DELETE` | `/api/research` | Admin — clear every annotation |
+
+---
+
 ## Deploying on Render + Neon (no Vercel)
 
 The frontend is a **static export** and FastAPI serves it at `/`, so the whole app is a
@@ -190,7 +240,8 @@ The frontend is a **static export** and FastAPI serves it at `/`, so the whole a
    inserting `+psycopg2` after `postgresql`, e.g.
    `postgresql+psycopg2://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require`
 3. Render → **New → Blueprint** → pick the repo (it reads `render.yaml`), then fill in the
-   prompted secrets: `DATABASE_URL`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ADMIN_PASSWORD`.
+   prompted secrets: `DATABASE_URL`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ADMIN_PASSWORD`,
+   and optionally `GROQ_API_KEY` for the research agent.
 4. Render builds the Docker image (Node builds the UI, Python stage serves it) and gives you
    `https://<service>.onrender.com` — that **single URL is the whole app** (`/api/health` for
    the health check, `/docs` for the API).
@@ -280,7 +331,7 @@ If you prefer separate hosts, the frontend is still self-contained:
 
 ## Configuration reference
 
-See `.env.example` for the full list. Key variables: `SECRET_KEY`, `DATABASE_URL`, `DATA_PROVIDER`, `ALPACA_*`, `FINNHUB_API_KEY`, `FRED_API_KEY`, `POLYGON_API_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `CORS_ORIGINS`, and the `CRON_*` schedules.
+See `.env.example` for the full list. Key variables: `SECRET_KEY`, `DATABASE_URL`, `STATIC_DIR`, `DATA_PROVIDER`, `ALPACA_*`, `FINNHUB_API_KEY`, `FRED_API_KEY`, `POLYGON_API_KEY`, `GROQ_API_KEY`/`GROQ_MODEL`, `LLM_*` (research agent), `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `CORS_ORIGINS`, and the `CRON_*` schedules.
 
 ---
 

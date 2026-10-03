@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { SignalOut } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
-import { ConfidenceBadge, SetupBadge, TypeBadge } from "./Badges";
+import { AdjustedConfidence, ConfidenceBadge, SentimentBadge, SetupBadge, TypeBadge } from "./Badges";
 
 function EventFlags({ signal }: { signal: SignalOut }) {
   const flags = (signal.event_flags ?? {}) as Record<string, unknown>;
@@ -40,10 +40,21 @@ export function SignalCard({ signal }: { signal: SignalOut }) {
             <span className="font-semibold text-emerald-400">{signal.ticker}</span>
             <SetupBadge setup={signal.setup} type={signal.type} />
             <TypeBadge type={signal.type} />
+            {signal.annotation && <SentimentBadge sentiment={signal.annotation.sentiment} />}
           </div>
           <div className="mt-0.5 text-xs text-slate-500">{signal.sector ?? signal.name ?? ""}</div>
         </div>
-        <ConfidenceBadge value={signal.confidence} />
+        <div className="text-right">
+          <ConfidenceBadge value={signal.confidence} />
+          {signal.annotation && (
+            <div className="mt-1">
+              <AdjustedConfidence
+                base={signal.annotation.base_confidence}
+                adjusted={signal.annotation.adjusted_confidence}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-center">

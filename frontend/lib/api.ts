@@ -8,6 +8,7 @@
 
 import type {
   MacroDashboard,
+  ResearchStatus,
   SettingsResponse,
   SignalDetail,
   SignalListResponse,
@@ -122,6 +123,16 @@ export const api = {
 
   refreshStatus: () =>
     request<RefreshStatus>("/api/refresh/status"),
+
+  researchStatus: () => request<ResearchStatus>("/api/research/status"),
+
+  runResearch: (body: { limit?: number; force?: boolean; signal_ids?: number[] } = {}) =>
+    request<ResearchStatus>("/api/research/run", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  clearResearch: () => request<ResearchStatus>("/api/research", { method: "DELETE" }),
 };
 
 export interface RefreshStatus {

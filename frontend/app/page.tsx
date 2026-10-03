@@ -10,6 +10,7 @@ import { SignalCard } from "@/components/SignalCard";
 import { EMPTY_FILTERS, Filters, type FilterState } from "@/components/Filters";
 import { EarningsList, MacroEventList, SectorHeatmap } from "@/components/MacroWidgets";
 import { RefreshButton } from "@/components/RefreshButton";
+import { ResearchButton } from "@/components/ResearchButton";
 import { Collapsible } from "@/components/Collapsible";
 
 export default function HomePage() {
@@ -82,6 +83,7 @@ export default function HomePage() {
             All
           </button>
           {token && <RefreshButton onDone={() => setReload((r) => r + 1)} />}
+          {token && <ResearchButton onDone={() => setReload((r) => r + 1)} />}
         </div>
       </div>
 

@@ -138,6 +138,8 @@ class Signal(Base):
     triggered_rules: Mapped[list | None] = mapped_column(JSON, nullable=True)
     event_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     option_recommendation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # LLM research agent output (sentiment, risk flags, confidence adjustment).
+    annotation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 

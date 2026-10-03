@@ -15,7 +15,7 @@ from ..core import security
 from ..models import ApiCredential
 from ..schemas import CredentialOut, ProviderStatus
 
-PROVIDERS = ("alpaca", "finnhub", "polygon", "fred")
+PROVIDERS = ("alpaca", "finnhub", "polygon", "fred", "groq")
 
 
 def _env_credentials() -> dict:
@@ -34,6 +34,8 @@ def _env_credentials() -> dict:
         creds["polygon"] = {"api_key": s.polygon_api_key}
     if s.fred_api_key:
         creds["fred"] = {"api_key": s.fred_api_key}
+    if s.groq_api_key:
+        creds["groq"] = {"api_key": s.groq_api_key, "model": s.groq_model}
     return creds
 
 
