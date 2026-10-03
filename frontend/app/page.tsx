@@ -29,6 +29,7 @@ export default function HomePage() {
       const params: Record<string, string | number | boolean | undefined> = {
         all: showAll,
         type: filters.type,
+        setup: filters.setup,
         sector: filters.sector,
         min_confidence: filters.min_confidence ? Number(filters.min_confidence) : undefined,
         min_price: filters.min_price ? Number(filters.min_price) : undefined,

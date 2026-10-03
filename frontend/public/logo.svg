@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 244 48" width="244" height="48" role="img" aria-label="Swing Trading Picks">
+  <defs>
+    <linearGradient id="stpBar" gradientUnits="userSpaceOnUse" x1="14" y1="51" x2="50" y2="15">
+      <stop offset="0" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+  <!-- Mark: 40x40, vertically centred on y=24 (same motif as app/icon.svg) -->
+  <g transform="translate(4 4) scale(0.625)">
+    <rect width="64" height="64" rx="14" fill="#0f172a" stroke="#10b981" stroke-opacity="0.45" stroke-width="3"/>
+    <rect x="14" y="34" width="10" height="17" rx="5" fill="url(#stpBar)"/>
+    <rect x="27" y="25" width="10" height="26" rx="5" fill="url(#stpBar)"/>
+    <rect x="40" y="15" width="10" height="36" rx="5" fill="url(#stpBar)"/>
+  </g>
+  <!-- Wordmark: baseline tuned so cap-heights centre on y=24 -->
+  <text x="52" y="30.5" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="19" font-weight="700" fill="#e2e8f0" letter-spacing="-0.3">Swing Trading Picks</text>
+</svg>

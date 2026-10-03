@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { SignalOut } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
-import { ConfidenceBadge, TypeBadge } from "./Badges";
+import { ConfidenceBadge, SetupBadge, TypeBadge } from "./Badges";
 
 function EventFlags({ signal }: { signal: SignalOut }) {
   const flags = (signal.event_flags ?? {}) as Record<string, unknown>;
@@ -31,13 +31,14 @@ export function SignalCard({ signal }: { signal: SignalOut }) {
 
   return (
     <Link
-      href={`/signals/${signal.id}`}
+      href={`/signals?id=${signal.id}`}
       className="block rounded-xl border border-slate-800 bg-slate-900/60 p-4 transition hover:border-slate-700"
     >
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="font-semibold text-emerald-400">{signal.ticker}</span>
+            <SetupBadge setup={signal.setup} type={signal.type} />
             <TypeBadge type={signal.type} />
           </div>
           <div className="mt-0.5 text-xs text-slate-500">{signal.sector ?? signal.name ?? ""}</div>

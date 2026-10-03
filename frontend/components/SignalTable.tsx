@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { SignalOut } from "@/lib/types";
 import { formatPrice } from "@/lib/format";
-import { ConfidenceBadge, TypeBadge } from "./Badges";
+import { ConfidenceBadge, SetupBadge, TypeBadge } from "./Badges";
 
 function EventFlags({ signal }: { signal: SignalOut }) {
   const flags = (signal.event_flags ?? {}) as Record<string, unknown>;
@@ -47,7 +47,7 @@ export function SignalTable({ signals }: { signals: SignalOut[] }) {
         <thead className="border-b border-slate-800 bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
           <tr>
             <th className="px-4 py-3">Ticker</th>
-            <th className="px-4 py-3">Type</th>
+            <th className="px-4 py-3">Setup</th>
             <th className="px-4 py-3">Entry / Option</th>
             <th className="px-4 py-3">Target</th>
             <th className="px-4 py-3">Stop</th>
@@ -61,13 +61,16 @@ export function SignalTable({ signals }: { signals: SignalOut[] }) {
           {signals.map((s) => (
             <tr key={s.id} className="border-b border-slate-800/60 hover:bg-slate-900/40">
               <td className="px-4 py-3">
-                <Link href={`/signals/${s.id}`} className="font-semibold text-emerald-400 hover:underline">
+                <Link href={`/signals?id=${s.id}`} className="font-semibold text-emerald-400 hover:underline">
                   {s.ticker}
                 </Link>
                 <div className="text-[11px] text-slate-500">{s.name}</div>
               </td>
               <td className="px-4 py-3">
-                <TypeBadge type={s.type} />
+                <div className="flex items-center gap-2">
+                  <SetupBadge setup={s.setup} type={s.type} />
+                  <TypeBadge type={s.type} />
+                </div>
               </td>
               <td className="px-4 py-3">
                 <EntryCell signal={s} />
@@ -82,7 +85,7 @@ export function SignalTable({ signals }: { signals: SignalOut[] }) {
               </td>
               <td className="px-4 py-3 text-slate-400">{s.sector ?? "—"}</td>
               <td className="px-4 py-3 text-right">
-                <Link href={`/signals/${s.id}`} className="text-xs text-slate-400 hover:text-white">
+                <Link href={`/signals?id=${s.id}`} className="text-xs text-slate-400 hover:text-white">
                   Chart →
                 </Link>
               </td>

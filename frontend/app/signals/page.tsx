@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import type { SignalDetail } from "@/lib/types";
-import { ConfidenceBadge, TypeBadge } from "@/components/Badges";
+import { ConfidenceBadge, SetupBadge, TypeBadge } from "@/components/Badges";
 import { Collapsible } from "@/components/Collapsible";
+import { SETUP_LABELS } from "@/lib/types";
 import { confidenceLabel, formatDate, formatPrice } from "@/lib/format";
 
 const PriceChart = dynamic(() => import("@/components/PriceChart"), { ssr: false });
@@ -127,13 +128,17 @@ function ConfidenceDerivation({
   );
 }
 
-export default function SignalDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
+function SignalDetail() {
+  const searchParams = useSearchParams();
+  const id = searchParams.get("id") ?? "";
   const [data, setData] = useState<SignalDetail | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!id) {
+      setError("No signal selected.");
+      return;
+    }
     api
       .signalDetail(id)
       .then(setData)
@@ -153,11 +158,13 @@ export default function SignalDetailPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-emerald-400">{s.ticker}</h1>
+            <SetupBadge setup={s.setup} type={s.type} />
             <TypeBadge type={s.type} />
           </div>
           <p className="text-sm text-slate-400">
             {s.name} · {s.sector ?? "Unknown sector"} · {formatDate(s.date)}
           </p>
+          <p className="text-xs text-slate-500">{SETUP_LABELS[s.setup] ?? s.setup}</p>
         </div>
         <div className="ml-auto">
           <ConfidenceBadge value={s.confidence} />
@@ -282,5 +289,14 @@ export default function SignalDetailPage() {
         <ConfidenceDerivation components={components} confidence={s.confidence} />
       </Collapsible>
     </div>
+  );
+}
+
+// useSearchParams needs a Suspense boundary in a statically exported page.
+export default function SignalDetailPage() {
+  return (
+    <Suspense fallback={<p className="text-sm text-slate-400">Loading…</p>}>
+      <SignalDetail />
+    </Suspense>
   );
 }

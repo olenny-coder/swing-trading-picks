@@ -80,7 +80,8 @@ class SignalOut(BaseModel):
     ticker: str
     name: str | None = None
     date: date
-    type: str
+    type: str  # BUY | SELL
+    setup: str  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2
     entry: float
     target: float
     stop: float
@@ -94,7 +95,8 @@ class SignalOut(BaseModel):
 
 
 class SignalFilters(BaseModel):
-    type: str | None = None
+    type: str | None = None  # BUY | SELL
+    setup: str | None = None  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2
     sector: str | None = None
     min_confidence: float | None = Field(default=None, ge=0, le=100)
     exclude_earnings_week: bool = False
@@ -115,7 +117,9 @@ class SignalListResponse(BaseModel):
 class SummaryResponse(BaseModel):
     total_buys: int
     total_sells: int
-    total_doji: int
+    total_continuation: int = 0
+    total_reversal: int = 0
+    setup_counts: dict[str, int] = {}
     avg_confidence: float
     high_confidence_count: int
     regime: str | None = None
@@ -211,7 +215,7 @@ class SignalDetailOut(BaseModel):
 # Backtesting
 # ---------------------------------------------------------------------------
 class BacktestRequest(BaseModel):
-    strategy: str = "all"  # BUY_STANDARD | BUY_DOJI_REVERSAL | SELL | all
+    strategy: str = "all"  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2 | all
     start_date: date | None = None
     end_date: date | None = None
     tickers: list[str] | None = None

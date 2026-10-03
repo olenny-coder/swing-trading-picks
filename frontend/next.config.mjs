@@ -1,18 +1,12 @@
 /** @type {import('next').NextConfig} */
+// Static export: `next build` emits a fully static site into ./out, which the
+// FastAPI backend serves. This lets the whole app run as a SINGLE service on
+// Render (frontend + API on one URL) with no Vercel and no Node server.
 const nextConfig = {
   reactStrictMode: true,
-  output: "standalone",
-  // Proxy /api/* to the FastAPI backend so the browser talks same-origin
-  // (no CORS, and the backend URL stays server-side / configurable).
-  async rewrites() {
-    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${apiUrl}/api/:path*`,
-      },
-    ];
-  },
+  output: "export",
+  trailingSlash: true,
+  images: { unoptimized: true },
 };
 
 export default nextConfig;

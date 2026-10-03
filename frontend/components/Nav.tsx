@@ -45,10 +45,7 @@ export function Nav() {
     <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
       <nav className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-3 py-3 sm:px-6">
         <Link href="/" className="flex min-w-0 items-center gap-2" onClick={() => setOpen(false)}>
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-sm font-bold">
-            ST
-          </span>
-          <span className="truncate text-sm font-semibold sm:text-base">Swing Trading Picks</span>
+          <img src="/logo.svg" alt="Swing Trading Picks" className="h-8 w-auto" />
         </Link>
 
         <div className="flex items-center gap-2">

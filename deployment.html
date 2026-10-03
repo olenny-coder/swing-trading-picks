@@ -121,7 +121,7 @@
 
 <header>
   <h1><span class="badge">▲</span> Swing Trading Picks — Free Cloud Deployment</h1>
-  <p class="subtitle">A step-by-step guide to hosting the app for $0 using Vercel + Render + Neon + GitHub Actions.</p>
+  <p class="subtitle">A step-by-step guide to hosting the app for $0 using Render + Neon + GitHub Actions — one service, no Vercel.</p>
 </header>
 
 <section>
@@ -131,7 +131,7 @@
       <tr><th>Piece</th><th>Service</th><th>Cost</th><th>Notes</th></tr>
     </thead>
     <tbody>
-      <tr><td>Frontend (Next.js)</td><td><strong>Vercel</strong></td><td>Free</td><td>Auto-deploys from GitHub</td></tr>
+      <tr><td>App (FastAPI + built UI)</td><td><strong>Render</strong></td><td>Free</td><td>One service, one URL — serves the API and the dashboard</td></tr>
       <tr><td>Backend (FastAPI)</td><td><strong>Render</strong></td><td>Free web service</td><td>Sleeps after ~15 min idle; wakes on request (~30–60 s cold start)</td></tr>
       <tr><td>Database</td><td><strong>Neon</strong> (or Supabase)</td><td>Free Postgres</td><td>No expiry, generous limits</td></tr>
       <tr><td>Daily 8:30 PM SGT pull</td><td><strong>GitHub Actions</strong></td><td>Free</td><td>Runs the cron even when the backend is asleep</td></tr>
@@ -151,7 +151,7 @@
     <p>You need:</p>
     <ul>
       <li>A <a href="https://github.com" target="_blank">GitHub</a> account and <strong>git</strong> installed (<a href="https://git-scm.com" target="_blank">git-scm.com</a>).</li>
-      <li>Free accounts on <a href="https://vercel.com" target="_blank">Vercel</a>, <a href="https://render.com" target="_blank">Render</a>, and <a href="https://neon.tech" target="_blank">Neon</a> (no credit card needed).</li>
+      <li>Free accounts on <a href="https://render.com" target="_blank">Render</a> and <a href="https://neon.tech" target="_blank">Neon</a> (no credit card needed).</li>
       <li>Your <strong>Alpaca</strong> API keys.</li>
     </ul>
     <p class="muted">Push the project to GitHub first:</p>
@@ -188,9 +188,11 @@ git push -u origin main</code></pre>
       <li>Connect your GitHub repo.</li>
       <li>Configure:
         <ul>
-          <li><strong>Root Directory:</strong> <code>backend</code></li>
-          <li><strong>Runtime:</strong> <code>Docker</code> (auto-detects <code>backend/Dockerfile</code>)</li>
+          <li><strong>Root Directory:</strong> leave as the repo root (the Dockerfile is top-level)</li>
+          <li><strong>Runtime:</strong> <code>Docker</code></li>
+          <li><strong>Dockerfile Path:</strong> <code>./Dockerfile</code></li>
           <li><strong>Instance Type:</strong> <code>Free</code></li>
+          <li><strong>Health Check Path:</strong> <code>/api/health</code></li>
         </ul>
       </li>
       <li>Set environment variables:</li>
@@ -200,44 +202,36 @@ git push -u origin main</code></pre>
       <tbody>
         <tr><td><code>DATABASE_URL</code></td><td>your Neon <code>postgresql+psycopg2://…</code> string</td></tr>
         <tr><td><code>SECRET_KEY</code></td><td>a long random string</td></tr>
-        <tr><td><code>DATA_PROVIDER</code></td><td><code>auto</code></td></tr>
+        <tr><td><code>STATIC_DIR</code></td><td><code>/app/static</code></td></tr>
+        <tr><td><code>DATA_PROVIDER</code></td><td><code>alpaca</code> (or <code>auto</code>)</td></tr>
         <tr><td><code>DISABLE_SCHEDULER</code></td><td><code>true</code></td></tr>
         <tr><td><code>ALPACA_API_KEY</code></td><td>your Alpaca key (or enter later in the app)</td></tr>
         <tr><td><code>ALPACA_SECRET_KEY</code></td><td>your Alpaca secret</td></tr>
         <tr><td><code>ALPACA_PAPER</code></td><td><code>true</code></td></tr>
-        <tr><td><code>CORS_ORIGINS</code></td><td><code>https://YOUR-APP.vercel.app</code></td></tr>
+        <tr><td><code>ADMIN_USERNAME</code></td><td><code>admin</code></td></tr>
+        <tr><td><code>ADMIN_PASSWORD</code></td><td>a strong password</td></tr>
       </tbody>
     </table>
     <ol start="5">
-      <li>Click <strong>Deploy</strong> (first build takes a few minutes).</li>
-      <li>Note the URL (e.g. <code>https://swing-api.onrender.com</code>) and test it at <code>/api/health</code>.</li>
+      <li>Click <strong>Deploy</strong> (the first build compiles the frontend, so it takes a few minutes).</li>
+      <li>Your URL (e.g. <code>https://swing-trading-picks.onrender.com</code>) <strong>is the whole app</strong> — UI and API on one origin. Test <code>/api/health</code>.</li>
     </ol>
   </div>
 </section>
 
 <section>
-  <h2>Step 3 — Vercel (frontend)</h2>
+  <h2>Step 3 — Open the app</h2>
   <div class="panel">
-    <ol>
-      <li>Sign in at <a href="https://vercel.com" target="_blank">vercel.com</a> → <strong>Add New → Project</strong> → import the repo.</li>
-      <li>Configure:
-        <ul>
-          <li><strong>Root Directory:</strong> <code>frontend</code></li>
-          <li><strong>Framework:</strong> Next.js (auto-detected)</li>
-        </ul>
-      </li>
-      <li>Set environment variable:</li>
-    </ol>
-    <table>
-      <thead><tr><th>Key</th><th>Value</th></tr></thead>
-      <tbody>
-        <tr><td><code>API_URL</code></td><td><code>https://swing-api.onrender.com</code> (your Render URL)</td></tr>
-      </tbody>
-    </table>
-    <ol start="4">
-      <li><strong>Deploy</strong>. Vercel gives you <code>https://YOUR-APP.vercel.app</code>.</li>
-      <li>Open it and sign in with <code>admin</code> / <code>changeme</code> (change these — see Step 5).</li>
-    </ol>
+    <p>There is no separate frontend host. FastAPI serves the exported Next.js UI at
+    <code>/</code>, so the single Render URL is everything:</p>
+    <ul>
+      <li><code>https://YOUR-SERVICE.onrender.com</code> — the dashboard (public, no login)</li>
+      <li><code>https://YOUR-SERVICE.onrender.com/login</code> — admin sign-in (refresh data, API keys)</li>
+      <li><code>https://YOUR-SERVICE.onrender.com/api/health</code> — health check</li>
+      <li><code>https://YOUR-SERVICE.onrender.com/docs</code> — interactive API docs</li>
+    </ul>
+    <p><strong>Tip:</strong> Render also reads <code>render.yaml</code> as a blueprint
+    (<strong>New → Blueprint</strong>), which configures all of the above automatically.</p>
   </div>
 </section>
 

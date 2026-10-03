@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..core.backtest import run_backtest
 from ..core.base_types import SignalContext
-from ..core.constants import SIGNAL_TYPES
+from ..core.constants import SETUPS
 from ..core.signal_engine import MIN_BARS
 from ..database import get_db
 from ..models import BacktestRun, User
@@ -55,7 +55,7 @@ def run(
 
     ctx = build_signal_context(db, end, {}, allow_earnings_plays=False)
 
-    strategies = SIGNAL_TYPES if req.strategy == "all" else [req.strategy]
+    strategies = SETUPS if req.strategy == "all" else [req.strategy]
     metrics_out: list[BacktestMetrics] = []
     run_id: int | None = None
 

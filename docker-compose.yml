@@ -1,3 +1,5 @@
+# Single-service stack: FastAPI serves the API *and* the exported frontend.
+# Build context is the repo root so the frontend can be compiled too.
 services:
   db:
     image: timescale/timescaledb:latest-pg16
@@ -15,29 +17,24 @@ services:
       timeout: 5s
       retries: 10
 
-  backend:
-    build: ./backend
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://swing:swing@db:5432/swingtrader
       SECRET_KEY: ${SECRET_KEY:-change-me-to-a-long-random-string}
       DATA_PROVIDER: ${DATA_PROVIDER:-auto}
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
-      CORS_ORIGINS: http://localhost:3000
+      STATIC_DIR: /app/static
+      # In-process scheduler is fine for a long-running container.
+      DISABLE_SCHEDULER: "false"
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
-
-  frontend:
-    build: ./frontend
-    environment:
-      API_URL: http://backend:8000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
 
 volumes:
   pgdata:

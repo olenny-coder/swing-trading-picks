@@ -7,7 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..core import indicators as ta
-from ..core.constants import SIGNAL_BUY_DOJI_REVERSAL, SIGNAL_BUY_STANDARD, SIGNAL_SELL
+from ..core.constants import (
+    CONTINUATION_SETUPS,
+    REVERSAL_SETUPS,
+    SETUPS,
+    SIGNAL_BUY,
+    SIGNAL_SELL,
+)
 from ..database import get_db
 from ..models import DailyBar, EarningsEvent, MacroEvent, MacroSnapshot, Signal, User
 from ..providers.registry import resolve_market_provider
@@ -36,6 +42,8 @@ def latest_signal_date(db: Session) -> date | None:
 def _matches(sig: Signal, f: SignalFilters) -> bool:
     flags = sig.event_flags or {}
     if f.type and sig.type != f.type:
+        return False
+    if f.setup and sig.setup != f.setup:
         return False
     if f.sector and sig.sector != f.sector:
         return False
@@ -76,9 +84,11 @@ def _diverse_shortlist(signals: list[Signal], limit: int) -> list[Signal]:
 
 
 def _summary(db: Session, signals: list[Signal]) -> SummaryResponse:
-    total_buys = sum(1 for s in signals if s.type == SIGNAL_BUY_STANDARD)
-    total_doji = sum(1 for s in signals if s.type == SIGNAL_BUY_DOJI_REVERSAL)
+    total_buys = sum(1 for s in signals if s.type == SIGNAL_BUY)
     total_sells = sum(1 for s in signals if s.type == SIGNAL_SELL)
+    total_continuation = sum(1 for s in signals if s.setup in CONTINUATION_SETUPS)
+    total_reversal = sum(1 for s in signals if s.setup in REVERSAL_SETUPS)
+    setup_counts = {s: sum(1 for x in signals if x.setup == s) for s in SETUPS}
     avg_conf = round(sum(s.confidence for s in signals) / len(signals), 1) if signals else 0.0
     high_count = sum(1 for s in signals if s.confidence >= 71)
 
@@ -94,7 +104,9 @@ def _summary(db: Session, signals: list[Signal]) -> SummaryResponse:
     return SummaryResponse(
         total_buys=total_buys,
         total_sells=total_sells,
-        total_doji=total_doji,
+        total_continuation=total_continuation,
+        total_reversal=total_reversal,
+        setup_counts=setup_counts,
         avg_confidence=avg_conf,
         high_confidence_count=high_count,
         regime=snap.regime if snap else None,

@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./swingtrader.db"
 
+    # Directory holding the exported frontend (built by `npm run build` in
+    # frontend/). When present, FastAPI serves the UI at "/" so the app runs as
+    # one service (Render + Neon, no Vercel).
+    static_dir: str = "static"
+
     # Data provider: "auto" | "alpaca" | "mock"
     data_provider: str = "auto"
 

@@ -2,6 +2,7 @@
 
 export interface FilterState {
   type: string;
+  setup: string;
   sector: string;
   min_confidence: string;
   exclude_earnings_week: boolean;
@@ -12,6 +13,7 @@ export interface FilterState {
 
 export const EMPTY_FILTERS: FilterState = {
   type: "",
+  setup: "",
   sector: "",
   min_confidence: "",
   exclude_earnings_week: false,
@@ -48,6 +50,7 @@ export function Filters({
 }) {
   const hasActive =
     filters.type ||
+    filters.setup ||
     filters.sector ||
     filters.min_confidence ||
     filters.min_price ||
@@ -65,18 +68,39 @@ export function Filters({
           </button>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
         <label className="block">
-          <span className="mb-1 block text-xs text-slate-400">Type</span>
+          <span className="mb-1 block text-xs text-slate-400">Direction</span>
           <select
             className={inputCls}
             value={filters.type}
             onChange={(e) => onChange({ type: e.target.value })}
           >
             <option value="">All</option>
-            <option value="BUY_STANDARD">Buy (Standard)</option>
-            <option value="BUY_DOJI_REVERSAL">Doji Reversal</option>
+            <option value="BUY">Buy</option>
             <option value="SELL">Sell</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-400">Setup</span>
+          <select
+            className={inputCls}
+            value={filters.setup}
+            onChange={(e) => onChange({ setup: e.target.value })}
+          >
+            <option value="">All</option>
+            <optgroup label="Continuation">
+              <option value="UC1">UC1 — Bullish continuation</option>
+              <option value="UC2">UC2 — Bullish continuation (deep)</option>
+              <option value="DC1">DC1 — Bearish continuation</option>
+              <option value="DC2">DC2 — Bearish continuation (deep)</option>
+            </optgroup>
+            <optgroup label="Reversal">
+              <option value="UR1">UR1 — Early upside reversal</option>
+              <option value="DR1">DR1 — Early downside reversal</option>
+              <option value="UR2">UR2 — Double top</option>
+              <option value="DR2">DR2 — Double bottom</option>
+            </optgroup>
           </select>
         </label>
         <label className="block">

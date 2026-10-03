@@ -24,7 +24,8 @@ from .signal_engine import MIN_BARS, SignalDraft, analyze_ticker
 class TradeResult:
     ticker: str
     signal_date: date
-    type: str
+    setup: str
+    direction: str
     entry: float
     exit: float
     exit_date: date | None
@@ -41,7 +42,7 @@ def simulate_trade(draft: SignalDraft, bars: list, signal_index: int, holding_da
     entry_bar = bars[signal_index + 1]
     entry = entry_bar.open or entry_bar.close
 
-    is_sell = draft.type == SIGNAL_SELL
+    is_sell = draft.direction == SIGNAL_SELL
     target, stop = draft.target, draft.stop
 
     for j in range(signal_index + 1, min(signal_index + 1 + holding_days, len(bars))):
@@ -66,7 +67,8 @@ def _result(draft, entry, exit_, exit_date, holding, hit_target, hit_stop, is_se
     return TradeResult(
         ticker=draft.ticker,
         signal_date=date.min,  # overwritten by the caller with the signal bar date
-        type=draft.type,
+        setup=draft.setup,
+        direction=draft.direction,
         entry=round(entry, 4),
         exit=round(exit_, 4),
         exit_date=exit_date,
@@ -92,7 +94,7 @@ def run_backtest(
         for i in range(MIN_BARS, n):
             drafts = analyze_ticker(ticker, names.get(ticker, ticker), sectors.get(ticker), bars[: i + 1], ctx)
             for d in drafts:
-                if strategy != "all" and d.type != strategy:
+                if strategy != "all" and d.setup != strategy:
                     continue
                 result = simulate_trade(d, bars, i, holding_days)
                 if result is not None:

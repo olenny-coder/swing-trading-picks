@@ -10,7 +10,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..core.constants import SIGNAL_SELL, SIGNAL_TYPES
+from ..core.constants import SETUPS, SIGNAL_SELL
 from ..core.signal_engine import MIN_BARS, analyze_ticker
 from ..models import BacktestRun, Signal
 from ..providers.base import MacroDataProvider, MarketDataProvider
@@ -23,7 +23,7 @@ _BAR_WINDOW = timedelta(days=420)
 
 def load_backtest_win_rates(db: Session) -> dict[str, float]:
     rates: dict[str, float] = {}
-    for stype in SIGNAL_TYPES:
+    for stype in SETUPS:
         row = (
             db.query(BacktestRun)
             .filter(BacktestRun.strategy == stype)
@@ -57,7 +57,8 @@ def generate_signals(
     # Idempotent: replace today's signals.
     db.query(Signal).filter(Signal.date == signal_date).delete(synchronize_session=False)
 
-    counts = {"BUY_STANDARD": 0, "BUY_DOJI_REVERSAL": 0, "SELL": 0, "total": 0}
+    counts = {s: 0 for s in SETUPS}
+    counts.update({"BUY": 0, "SELL": 0, "total": 0})
     for meta in universe:
         bars = load_bars(db, meta.ticker, start, signal_date)
         if len(bars) < MIN_BARS:
@@ -66,7 +67,7 @@ def generate_signals(
         drafts = analyze_ticker(meta.ticker, meta.name, meta.sector, bars, ctx)
         for d in drafts:
             option_rec = None
-            if d.type == SIGNAL_SELL:
+            if d.direction == SIGNAL_SELL:
                 option_rec = recommend_put(market_provider, d.ticker, d.price, d.target, d.stop)
                 if option_rec is not None:
                     d.event_flags["options_liquid"] = True
@@ -80,7 +81,8 @@ def generate_signals(
                 ticker=d.ticker,
                 name=d.name,
                 date=signal_date,
-                type=d.type,
+                type=d.direction,
+                setup=d.setup,
                 entry=d.entry,
                 target=d.target,
                 stop=d.stop,
@@ -93,7 +95,8 @@ def generate_signals(
                 option_recommendation=option_rec,
             )
             db.add(signal)
-            counts[d.type] = counts.get(d.type, 0) + 1
+            counts[d.setup] = counts.get(d.setup, 0) + 1
+            counts[d.direction] = counts.get(d.direction, 0) + 1
             counts["total"] += 1
 
     db.commit()

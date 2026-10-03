@@ -25,21 +25,35 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .core.constants import (
-    SIGNAL_BUY_DOJI_REVERSAL,
-    SIGNAL_BUY_STANDARD,
-    SIGNAL_PUT,
+    SETUPS,
+    SETUP_DC1,
+    SETUP_DC2,
+    SETUP_DR1,
+    SETUP_DR2,
+    SETUP_UC1,
+    SETUP_UC2,
+    SETUP_UR1,
+    SETUP_UR2,
+    SIGNAL_BUY,
     SIGNAL_SELL,
     SIGNAL_TYPES,
 )
 from .database import Base
 
-# Re-export signal type constants (single source of truth: app.core.constants).
+# Re-export signal constants (single source of truth: app.core.constants).
 __all__ = [
-    "SIGNAL_BUY_STANDARD",
-    "SIGNAL_BUY_DOJI_REVERSAL",
+    "SIGNAL_BUY",
     "SIGNAL_SELL",
-    "SIGNAL_PUT",
     "SIGNAL_TYPES",
+    "SETUPS",
+    "SETUP_UC1",
+    "SETUP_UC2",
+    "SETUP_DC1",
+    "SETUP_DC2",
+    "SETUP_UR1",
+    "SETUP_DR1",
+    "SETUP_UR2",
+    "SETUP_DR2",
 ]
 
 
@@ -100,14 +114,15 @@ class DailyBar(Base):
 class Signal(Base):
     __tablename__ = "signals"
     __table_args__ = (
-        UniqueConstraint("ticker", "date", "type", name="uq_signal_ticker_date_type"),
+        UniqueConstraint("ticker", "date", "setup", name="uq_signal_ticker_date_setup"),
         Index("ix_signal_date_confidence", "date", "confidence"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ticker: Mapped[str] = mapped_column(String(16), index=True)
     date: Mapped[date] = mapped_column(Date, index=True)  # signal date
-    type: Mapped[str] = mapped_column(String(32), index=True)
+    type: Mapped[str] = mapped_column(String(32), index=True)  # BUY | SELL
+    setup: Mapped[str] = mapped_column(String(16), index=True, default="UC1")  # UC1..DR2
 
     entry: Mapped[float] = mapped_column(Float)
     target: Mapped[float] = mapped_column(Float)

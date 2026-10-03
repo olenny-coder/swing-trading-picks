@@ -1,7 +1,10 @@
 "use client";
 
-// API client with Bearer-token injection. All requests go through the Next.js
-// /api rewrite (same-origin), so no CORS and no backend URL in the bundle.
+// API client with Bearer-token injection.
+//
+// Default: same-origin relative requests (""), which is what the single-service
+// Render deployment uses — FastAPI serves both the static frontend and /api.
+// Set NEXT_PUBLIC_API_BASE only when the frontend is hosted separately.
 
 import type {
   MacroDashboard,
@@ -11,6 +14,8 @@ import type {
   Summary,
   TestConnectionResult,
 } from "./types";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -39,7 +44,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(path, { ...options, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
     // Token invalid/expired: clear it and redirect to login.
     setToken(null);

@@ -1,6 +1,22 @@
 // Shared types mirroring the backend Pydantic schemas.
 
-export type SignalType = "BUY_STANDARD" | "BUY_DOJI_REVERSAL" | "SELL";
+export type SignalType = "BUY" | "SELL";
+
+/** SMA 20/50 flow-system setups. */
+export type SetupCode = "UC1" | "UC2" | "DC1" | "DC2" | "UR1" | "DR1" | "UR2" | "DR2";
+
+export const SETUP_CODES: SetupCode[] = ["UC1", "UC2", "DC1", "DC2", "UR1", "DR1", "UR2", "DR2"];
+
+export const SETUP_LABELS: Record<SetupCode, string> = {
+  UC1: "Bullish continuation (shallow pullback)",
+  UC2: "Bullish continuation (deep pullback)",
+  DC1: "Bearish continuation (shallow pullback)",
+  DC2: "Bearish continuation (deep pullback)",
+  UR1: "Early upside reversal",
+  DR1: "Early downside reversal",
+  UR2: "Double-top reversal",
+  DR2: "Double-bottom reversal",
+};
 
 export interface SignalOut {
   id: number;
@@ -8,6 +24,7 @@ export interface SignalOut {
   name: string | null;
   date: string;
   type: SignalType;
+  setup: SetupCode;
   entry: number;
   target: number;
   stop: number;
@@ -41,7 +58,9 @@ export interface OptionRecommendation {
 export interface Summary {
   total_buys: number;
   total_sells: number;
-  total_doji: number;
+  total_continuation: number;
+  total_reversal: number;
+  setup_counts: Record<string, number>;
   avg_confidence: number;
   high_confidence_count: number;
   regime: string | null;

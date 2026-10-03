@@ -74,6 +74,18 @@ def _migrate() -> None:
                 )
 
     if "signals" in tables:
-        # Rename the legacy PUT signal type to SELL.
+        cols = {c["name"] for c in insp.get_columns("signals")}
+        if "setup" not in cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE signals ADD COLUMN setup VARCHAR(16) DEFAULT 'LEGACY'")
+                )
+        # Collapse legacy signal types onto the BUY/SELL direction model.
         with engine.begin() as conn:
             conn.execute(text("UPDATE signals SET type = 'SELL' WHERE type = 'PUT'"))
+            conn.execute(
+                text("UPDATE signals SET type = 'BUY' WHERE type IN ('BUY_STANDARD', 'BUY_DOJI_REVERSAL')")
+            )
+            conn.execute(
+                text("UPDATE signals SET setup = 'LEGACY' WHERE setup IS NULL OR setup = ''")
+            )

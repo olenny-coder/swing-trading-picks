@@ -1,0 +1,46 @@
+# Render blueprint — single service: FastAPI serves the API *and* the built UI.
+# Database is Neon (free Postgres); paste its connection string when prompted.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo.
+services:
+  - type: web
+    name: swing-trading-picks
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: STATIC_DIR
+        value: /app/static
+      # Neon connection string, e.g.
+      # postgresql+psycopg2://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      # Free instances sleep, so use the GitHub Actions cron instead.
+      - key: DISABLE_SCHEDULER
+        value: "true"
+      - key: DATA_PROVIDER
+        value: alpaca
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: ALPACA_PAPER
+        value: "true"
+      - key: ALPACA_DATA_FEED
+        value: iex
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      # Optional: real economic calendar / more options data.
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: FRED_API_KEY
+        sync: false

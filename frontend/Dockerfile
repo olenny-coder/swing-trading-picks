@@ -1,23 +1,21 @@
-# ---- deps ----
-FROM node:20-alpine AS deps
+# Static-only image: builds the Next.js export and serves it with nginx.
+#
+# NOTE: the recommended deployment is the single-service root Dockerfile, where
+# FastAPI serves both the API and this UI on one URL. Use this image only if you
+# want to host the frontend separately (then set NEXT_PUBLIC_API_BASE to the
+# backend origin at build time).
+FROM node:20-alpine AS build
+
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 
-# ---- build ----
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ARG NEXT_PUBLIC_API_BASE=""
+ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# ---- runner (standalone) ----
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-EXPOSE 3000
-CMD ["node", "server.js"]
+FROM nginx:alpine
+COPY --from=build /app/out /usr/share/nginx/html
+EXPOSE 80

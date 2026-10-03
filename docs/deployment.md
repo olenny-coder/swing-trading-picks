@@ -4,19 +4,22 @@ This guide deploys the app for free using:
 
 | Piece | Service | Cost | Notes |
 |---|---|---|---|
-| Frontend (Next.js) | **Vercel** | Free | Auto-deploys from GitHub |
-| Backend (FastAPI) | **Render** | Free web service | Spins down after 15 min idle; wakes on request (~30–60 s cold start) |
+| **App** (FastAPI + the built Next.js UI) | **Render** | Free web service | **One service, one URL.** Spins down after 15 min idle; wakes on request (~30–60 s cold start) |
 | Database | **Neon** (or Supabase) | Free Postgres | No expiry, generous limits |
 | Daily 8:30 PM SGT pull | **GitHub Actions** | Free | Runs the cron reliably even when the backend is asleep |
 
-> **Why GitHub Actions for the schedule?** Render's free tier puts the backend to
+> **No Vercel needed.** The frontend is built to a **static export** and FastAPI serves it
+> at `/`, so the UI and the API share one origin — no CORS, no second host, no Node server
+> in production. (`render.yaml` in the repo is a ready-made blueprint for exactly this.)
+
+> **Why GitHub Actions for the schedule?** Render's free tier puts the service to
 > sleep when idle, so the in-process scheduler won't fire. GitHub Actions runs on
 > its own schedule and writes directly to the shared Postgres database.
 
 ## 0. Prerequisites
 
 - A **GitHub** account, and **git** installed locally.
-- A **Vercel**, **Render**, and **Neon** account (all have free tiers, no card needed).
+- A **Render** and **Neon** account (both free tiers, no card needed).
 - Your **Alpaca** keys.
 
 Push the project to GitHub first:
@@ -42,51 +45,48 @@ git push -u origin main
 
 Keep this string — you'll set it as `DATABASE_URL` in two places (Render and GitHub).
 
-## 2. Render — deploy the backend
+## 2. Render — deploy the whole app (one service)
+
+**Option A — blueprint (fastest):** Render → **New → Blueprint** → pick the repo. Render reads
+`render.yaml` and prompts for the secret values (`DATABASE_URL`, `ALPACA_API_KEY`,
+`ALPACA_SECRET_KEY`, `ADMIN_PASSWORD`). Approve and it builds.
+
+**Option B — manual web service:**
 
 1. Sign in at [render.com](https://render.com) → **New → Web Service**.
 2. Connect your GitHub repo.
 3. Settings:
-   - **Root Directory**: `backend`
-   - **Runtime**: `Docker` (Render auto-detects `backend/Dockerfile`)
+   - **Root Directory**: *(leave as the repo root — the Dockerfile is at the top level)*
+   - **Runtime**: `Docker`
+   - **Dockerfile Path**: `./Dockerfile`
    - **Instance Type**: `Free`
+   - **Health Check Path**: `/api/health`
 4. Environment variables:
 
    | Key | Value |
    |---|---|
    | `DATABASE_URL` | your Neon `postgresql+psycopg2://...` string |
    | `SECRET_KEY` | a long random string (e.g. from a password generator) |
-   | `DATA_PROVIDER` | `auto` |
+   | `STATIC_DIR` | `/app/static` |
+   | `DATA_PROVIDER` | `alpaca` (or `auto`) |
    | `DISABLE_SCHEDULER` | `true` |
    | `ALPACA_API_KEY` | your Alpaca key *(or enter it later in the app's Settings UI)* |
    | `ALPACA_SECRET_KEY` | your Alpaca secret |
    | `ALPACA_PAPER` | `true` |
-   | `CORS_ORIGINS` | `https://<your-app>.vercel.app` |
+   | `ADMIN_USERNAME` | `admin` |
+   | `ADMIN_PASSWORD` | a strong password |
 
-5. Click **Deploy**. The first build takes a few minutes.
-6. Once deployed, note the URL (e.g. `https://swing-api.onrender.com`). Test it at
-   `https://swing-api.onrender.com/api/health`.
+   > `CORS_ORIGINS` is **not** needed: the UI and API are same-origin.
+
+5. Click **Deploy**. The first build compiles the frontend and installs Python deps (a few minutes).
+6. Once deployed, `https://<your-service>.onrender.com` **is the whole app** — open it and sign
+   in with your `ADMIN_USERNAME` / `ADMIN_PASSWORD`. (`/api/health` for health, `/docs` for the API.)
 
 > **Note:** you can skip the `ALPACA_*` env vars and instead enter the keys in the
 > app's **Settings → Alpaca** after deploying. The GitHub Actions cron needs the
 > keys as secrets (below) either way.
 
-## 3. Vercel — deploy the frontend
-
-1. Sign in at [vercel.com](https://vercel.com) → **Add New → Project** → import the repo.
-2. Configure:
-   - **Root Directory**: `frontend`
-   - **Framework Preset**: Next.js (auto-detected)
-3. Environment variable:
-
-   | Key | Value |
-   |---|---|
-   | `API_URL` | `https://swing-api.onrender.com` (your Render backend URL) |
-
-4. **Deploy**. Vercel gives you `https://<your-app>.vercel.app`.
-5. Open it and sign in with `admin` / `changeme` (change these via env vars — see below).
-
-## 4. GitHub Actions — the daily 8:30 PM SGT pull
+## 3. GitHub Actions — the daily 8:30 PM SGT pull
 
 The workflow is already in the repo at `.github/workflows/daily-cron.yml` (scheduled
 `30 12 * * *` UTC = 8:30 PM Singapore time). Add these **repository secrets**
@@ -103,9 +103,9 @@ The workflow is already in the repo at `.github/workflows/daily-cron.yml` (sched
 Then run it once manually (**Actions → Daily signal generation → Run workflow**) to
 verify, and confirm signals appear in the app.
 
-## 5. Change the default admin password
+## 4. Change the default admin password
 
-Set these on **Render** (backend) and restart:
+Set these on **Render** and restart:
 
 | Key | Value |
 |---|---|
@@ -122,5 +122,15 @@ Set these on **Render** (backend) and restart:
 - **Options data:** put-option *contract* recommendations need an Alpaca options
   subscription or a Polygon.io key; without them, bearish setups still appear with
   underlying levels.
+- **Updating the UI:** any change under `frontend/` requires a Render rebuild (the UI is
+  compiled into the image). Render auto-deploys on push, so just `git push`.
 - **Public repo warning:** if your repo is public, never commit `.env` or real
   secrets. Keys entered via the app's Settings UI are stored encrypted in the DB.
+
+## Local production check
+
+```bash
+docker compose up --build
+# whole app (UI + API) on one port:
+# http://localhost:8000
+```
