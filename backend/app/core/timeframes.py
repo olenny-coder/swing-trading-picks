@@ -31,9 +31,9 @@ TIMEFRAME_LABELS: dict[str, str] = {
 }
 
 TIMEFRAME_DESCRIPTIONS: dict[str, str] = {
-    DAILY: "One candle per trading day — the fastest signals, the most noise.",
-    WEEKLY: "One candle per week — fewer, more durable setups.",
-    MONTHLY: "One candle per month — position-trading context.",
+    DAILY: "Analysed on daily candles — the fastest reads, and the noisiest.",
+    WEEKLY: "Analysed on weekly candles — fewer setups, and the more durable ones.",
+    MONTHLY: "Analysed on monthly candles — position-trading context.",
 }
 
 #: How many bars of each timeframe the engine needs. The setup engine computes a

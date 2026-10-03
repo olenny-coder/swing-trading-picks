@@ -141,14 +141,18 @@ COUNTER_IMPACT_MAX = 5.0
 
 # Volume / Average True Range confirmation.
 #
-# A setup is more trustworthy when the entry candle is *backed*: it expands
-# beyond its recent Average True Range AND trades on above-average volume. Each
-# leg contributes nothing until it clears its threshold, so this adjustment can
-# only ever add confidence — it never penalises a quiet but valid setup.
-VOLUME_CONFIRMATION_MIN = 1.2    # multiple of the 20-period average volume
-VOLUME_CONFIRMATION_FULL = 2.2
-ATR_EXPANSION_MIN = 1.0          # entry-candle range as a multiple of ATR
-ATR_EXPANSION_FULL = 1.8
+# A setup is more trustworthy when the entry candle is *backed*: it trades on
+# above-average volume AND its range is at least a typical candle's. Each leg
+# contributes nothing until it clears its threshold, so this adjustment can only
+# ever add confidence — it never penalises a quiet but valid setup.
+#
+# The thresholds are deliberately reachable: a real entry candle is often close
+# to average size, so demanding a full Average True Range of expansion would mean
+# the bonus never applied at all.
+VOLUME_CONFIRMATION_MIN = 1.0    # multiple of the 20-period average volume
+VOLUME_CONFIRMATION_FULL = 2.0
+ATR_EXPANSION_MIN = 0.8          # entry-candle range as a multiple of ATR
+ATR_EXPANSION_FULL = 1.6
 CONFIRMATION_BOOST_MAX = 6.0     # maximum confidence points added
 
 

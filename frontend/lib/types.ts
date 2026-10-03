@@ -14,9 +14,12 @@ export const TIMEFRAME_LABELS: Record<Timeframe, string> = {
 };
 
 export const TIMEFRAME_DESCRIPTIONS: Record<Timeframe, string> = {
-  DAILY: "One candle per trading day — the fastest signals and the most noise.",
-  WEEKLY: "One candle per week — fewer setups, and more durable ones.",
-  MONTHLY: "One candle per month — position-trading context over years.",
+  DAILY:
+    "Analysed on daily candles — the fastest reads, and the noisiest. A pulled-back trend can resume within a week.",
+  WEEKLY:
+    "Analysed on weekly candles — fewer setups, and the more durable ones. The same rules, read on a slower clock.",
+  MONTHLY:
+    "Analysed on monthly candles — position-trading context. Needs several years of price history before setups can form.",
 };
 
 /** Retrospective result of a pick. */

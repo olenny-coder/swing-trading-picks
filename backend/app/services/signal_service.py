@@ -13,12 +13,25 @@ from sqlalchemy.orm import Session
 
 from ..core.constants import SETUPS, SIGNAL_SELL
 from ..core.signal_engine import analyze_ticker
-from ..core.timeframes import TIMEFRAMES, lookback_days, min_bars, normalise, resample
+from ..core.timeframes import (
+    DAILY,
+    MONTHLY,
+    TIMEFRAMES,
+    WEEKLY,
+    lookback_days,
+    min_bars,
+    normalise,
+    resample,
+)
 from ..models import BacktestRun, Signal
 from ..providers.base import MacroDataProvider, MarketDataProvider
 from .data_service import latest_trading_day, load_bars, resolve_universe
 from .macro_service import build_and_store_snapshot, build_signal_context, days_to_earnings
 from .options_service import recommend_put
+
+#: How many earlier completed candles per timeframe are replayed so History has
+#: a record to show and score. Repeat runs skip dates already stored.
+BACKFILL_CANDLES: dict[str, int] = {DAILY: 15, WEEKLY: 12, MONTHLY: 6}
 
 
 def load_backtest_win_rates(db: Session) -> dict[str, float]:
@@ -35,6 +48,134 @@ def load_backtest_win_rates(db: Session) -> dict[str, float]:
     return rates
 
 
+def _analyse(
+    meta, bars, timeframe: str, ctx, market_provider: MarketDataProvider
+) -> list[tuple[object, dict | None]]:
+    """Run the engine over one series and attach option ideas to short setups."""
+    out: list[tuple[object, dict | None]] = []
+    for draft in analyze_ticker(meta.ticker, meta.name, meta.sector, bars, ctx):
+        option_rec = None
+        if draft.direction == SIGNAL_SELL:
+            option_rec = recommend_put(
+                market_provider, draft.ticker, draft.price, draft.target, draft.stop
+            )
+            if option_rec is not None:
+                draft.event_flags["options_liquid"] = True
+            else:
+                # Keep the bearish setup even when no options chain is available
+                # (e.g. no options subscription); flag it so the UI can show the
+                # underlying levels without a contract.
+                draft.event_flags["options_data"] = "unavailable"
+        out.append((draft, option_rec))
+    return out
+
+
+def _persist(db: Session, drafts, timeframe: str, candle_date: date) -> dict:
+    """Store one candle's drafts, returning per-setup and per-direction counts."""
+    counts = {s: 0 for s in SETUPS}
+    counts.update({"BUY": 0, "SELL": 0, "total": 0})
+    for draft, option_rec in drafts:
+        db.add(
+            Signal(
+                ticker=draft.ticker,
+                name=draft.name,
+                date=candle_date,
+                type=draft.direction,
+                setup=draft.setup,
+                timeframe=timeframe,
+                entry=draft.entry,
+                target=draft.target,
+                stop=draft.stop,
+                confidence=draft.confidence,
+                price=draft.price,
+                sector=draft.sector,
+                confidence_components=draft.confidence_components,
+                triggered_rules=draft.triggered_rules,
+                event_flags=draft.event_flags,
+                option_recommendation=option_rec,
+            )
+        )
+        counts[draft.setup] = counts.get(draft.setup, 0) + 1
+        counts[draft.direction] = counts.get(draft.direction, 0) + 1
+        counts["total"] += 1
+    return counts
+
+
+def backfill_history(
+    db: Session,
+    market_provider: MarketDataProvider,
+    ctx,
+    universe,
+    timeframes: tuple[str, ...] = TIMEFRAMES,
+    steps: dict[str, int] | None = None,
+    anchor: date | None = None,
+) -> dict:
+    """Replay recent completed candles so History has a real record to judge.
+
+    A run only produces picks for the newest candle, so a fresh install has no
+    history — and therefore nothing to score. This walks back over the last few
+    completed candles of each timeframe, analysing the series **as it stood at
+    that candle**, and stores whatever fires. Dates already stored are skipped,
+    so repeat runs are cheap.
+
+    Results are evaluated separately by ``outcome_service``.
+    """
+    steps = steps or BACKFILL_CANDLES
+    anchor = anchor or latest_trading_day(db) or date.today()
+    written: dict[str, int] = {}
+
+    for timeframe in timeframes:
+        timeframe = normalise(timeframe)
+        ctx.timeframe = timeframe
+        minimum = min_bars(timeframe)
+        start = anchor - timedelta(days=lookback_days(timeframe))
+        wanted = steps.get(timeframe, 0)
+        if wanted <= 0:
+            written[timeframe] = 0
+            continue
+
+        # The completed candle dates come from a reference ticker, since every
+        # ticker shares the same trading calendar.
+        reference = None
+        for meta in universe:
+            bars = load_bars(db, meta.ticker, start, anchor)
+            if len(resample(bars, timeframe)) >= minimum:
+                reference = resample(bars, timeframe)
+                break
+        if reference is None:
+            written[timeframe] = 0
+            continue
+
+        # Oldest first, and never the newest candle (that is the live list).
+        candle_dates = [bar.date for bar in reference][-wanted - 1 : -1]
+
+        already = {
+            row[0]
+            for row in db.query(Signal.date)
+            .filter(Signal.timeframe == timeframe, Signal.date.in_(candle_dates))
+            .all()
+        }
+        total = 0
+        for candle_date in candle_dates:
+            if candle_date in already:
+                continue
+            pending: list[tuple[object, dict | None]] = []
+            for meta in universe:
+                daily_bars = [b for b in load_bars(db, meta.ticker, start, anchor) if b.date <= candle_date]
+                series = resample(daily_bars, timeframe)
+                if len(series) < minimum:
+                    continue
+                pending.extend(_analyse(meta, series, timeframe, ctx, market_provider))
+            if not pending:
+                continue
+            counts = _persist(db, pending, timeframe, candle_date)
+            total += counts["total"]
+        written[timeframe] = total
+
+    db.commit()
+    return written
+
+
 def generate_signals(
     db: Session,
     market_provider: MarketDataProvider,
@@ -44,6 +185,7 @@ def generate_signals(
     min_price: float = 5.0,
     min_volume: float = 500_000.0,
     timeframes: tuple[str, ...] = TIMEFRAMES,
+    backfill: bool = True,
 ) -> dict:
     """Generate picks for each requested timeframe.
 
@@ -78,7 +220,7 @@ def generate_signals(
         # DELETE must not race the new rows, and it is scoped to (timeframe,
         # date) so a weekly and a daily list sharing a date never clobber each
         # other.
-        pending: list[tuple[object, dict | None, date]] = []
+        pending: list[tuple[object, dict | None]] = []
         stamp: date | None = None
         for meta in universe:
             daily_bars = load_bars(db, meta.ticker, start, anchor)
@@ -88,56 +230,26 @@ def generate_signals(
             candle_date = bars[-1].date
             stamp = stamp or candle_date
             ctx.earnings_in_days = days_to_earnings(db, meta.ticker, candle_date)
-            for draft in analyze_ticker(meta.ticker, meta.name, meta.sector, bars, ctx):
-                option_rec = None
-                if draft.direction == SIGNAL_SELL:
-                    option_rec = recommend_put(
-                        market_provider, draft.ticker, draft.price, draft.target, draft.stop
-                    )
-                    if option_rec is not None:
-                        draft.event_flags["options_liquid"] = True
-                    else:
-                        # Keep the bearish setup even when no options chain is
-                        # available (e.g. no options subscription); flag it so
-                        # the UI can show the underlying levels without a
-                        # contract.
-                        draft.event_flags["options_data"] = "unavailable"
-                pending.append((draft, option_rec, candle_date))
+            pending.extend(_analyse(meta, bars, timeframe, ctx, market_provider))
 
         if stamp is not None:
             db.query(Signal).filter(
                 Signal.timeframe == timeframe, Signal.date == stamp
             ).delete(synchronize_session=False)
 
-        for draft, option_rec, candle_date in pending:
-            db.add(
-                Signal(
-                    ticker=draft.ticker,
-                    name=draft.name,
-                    date=candle_date,
-                    type=draft.direction,
-                    setup=draft.setup,
-                    timeframe=timeframe,
-                    entry=draft.entry,
-                    target=draft.target,
-                    stop=draft.stop,
-                    confidence=draft.confidence,
-                    price=draft.price,
-                    sector=draft.sector,
-                    confidence_components=draft.confidence_components,
-                    triggered_rules=draft.triggered_rules,
-                    event_flags=draft.event_flags,
-                    option_recommendation=option_rec,
-                )
-            )
-            tf_counts[draft.setup] = tf_counts.get(draft.setup, 0) + 1
-            tf_counts[draft.direction] = tf_counts.get(draft.direction, 0) + 1
-            tf_counts["total"] += 1
-
+        tf_counts = _persist(db, pending, timeframe, stamp) if stamp else tf_counts
         by_timeframe[timeframe] = tf_counts
         for key, value in tf_counts.items():
             counts[key] = counts.get(key, 0) + value
 
     db.commit()
+
+    # A run only covers the newest candle, so replay recent ones too — otherwise
+    # History has nothing to show and nothing to score.
+    if backfill:
+        counts["backfilled"] = backfill_history(
+            db, market_provider, ctx, universe, requested, anchor=anchor
+        )
+
     counts["by_timeframe"] = by_timeframe
     return counts

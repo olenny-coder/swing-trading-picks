@@ -215,11 +215,15 @@ the market context first, then a structural trigger times the entry. Definitions
 The same rules are read on three candle intervals, selectable on the **Daily View** and **History**
 pages:
 
-| Timeframe | Built from | Typical use | Minimum candles |
+| Timeframe | Candles analysed | Typical use | Minimum candles |
 |---|---|---|---|
-| **Daily** | One candle per trading day | Fastest signals, most noise | 80 |
-| **Weekly** | Daily candles aggregated per ISO week | Fewer, more durable setups | 60 |
-| **Monthly** | Daily candles aggregated per calendar month | Position-trading context | 55 |
+| **Daily** | Daily candles | Fastest reads, most noise | 80 |
+| **Weekly** | Weekly candles (daily candles aggregated per ISO week) | Fewer, more durable setups | 60 |
+| **Monthly** | Monthly candles (daily candles aggregated per calendar month) | Position-trading context | 55 |
+
+The interval names the **candle series the rules are read on**, not a separate set of rules: a
+weekly setup is the same rule set evaluated on weekly candles, so the momentum candle, the
+liquidity point and the 5–6 candle time limit all span weeks rather than days.
 
 Aggregation uses the usual convention: open is the first open of the period, high and low are the
 period extremes, close is the last close, and volume is the sum. The resulting candle is stamped
@@ -259,7 +263,24 @@ conservative reading, and it keeps the reported hit rate from flattering itself.
 hit rate, average result, average win, average loss and a by-setup breakdown, and each resolved
 pick carries a badge with its exit price, exit date and profit or loss.
 
-Outcomes are refreshed alongside signal generation and can be recomputed on demand by an admin.
+Outcomes are refreshed alongside signal generation and can be recomputed on demand by an admin
+(`POST /api/signals/outcomes`).
+
+### Backfilled history
+
+A generation run only covers the **newest** candle, so a fresh install would have nothing to score.
+Each run therefore also **replays recent completed candles** — analysing each series exactly as it
+stood at that candle — so History has a real record straight away:
+
+| Timeframe | Candles replayed | Lookback covered |
+|---|---|---|
+| Daily | 15 | about three weeks |
+| Weekly | 12 | about three months |
+| Monthly | 6 | about six months |
+
+Dates already stored are skipped, so repeat runs only fill gaps. On the reference dataset this
+produces roughly 110 daily and 70 weekly historical picks, which resolve into a genuine hit rate
+within minutes of the first refresh rather than after months of accumulation.
 
 ---
 
@@ -316,14 +337,18 @@ rewards exactly that — and only that:
 
 | Leg | Earns nothing below | Earns the full half-share at |
 |---|---|---|
-| Volume | 1.2 × its 20-period average | 2.2 × |
-| Entry candle range | 1.0 × the Average True Range | 1.8 × |
+| Volume | 1.0 × its 20-period average | 2.0 × |
+| Entry candle range | 0.8 × the Average True Range | 1.6 × |
 
 Each leg contributes half of the maximum, so a candle that expands on heavy volume earns the full
 **+6**, one that is strong on volume only earns up to +3, and a quiet candle earns **0**. The term
-is **positive-only**: it can never penalise an otherwise valid setup. Both raw readings
-(`volume_ratio`, `atr_multiple`) and the awarded bonus are stored per signal and printed on the
-signal page.
+is **positive-only**: it can never penalise an otherwise valid setup.
+
+Volume and range also feed the blend directly: `volume_confirmation` and `volatility_expansion` are
+two of the seven continuation factors, so together they carry roughly **17%** of the blend for a
+continuation setup (7 factors × 60% family weight) before the bonus is applied. Both raw readings
+(`volume_ratio`, `atr_multiple`), the two factor scores and the awarded bonus are stored per signal
+and printed on the signal page.
 
 ### Counter impact (the "counter recommended" factor)
 

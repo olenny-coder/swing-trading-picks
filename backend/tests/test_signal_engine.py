@@ -259,15 +259,19 @@ class TestSmaStrategy(unittest.TestCase):
     def test_confirmation_boost_thresholds(self):
         from app.core.sma_strategy import CONFIRMATION_BOOST_MAX, _confirmation_boost
 
-        # Below both thresholds, and exactly at them, nothing is added.
+        # Below both floors, and exactly at them, nothing is added.
+        self.assertEqual(_confirmation_boost(0.9, 0.7), 0.0)
         self.assertEqual(_confirmation_boost(1.0, 0.8), 0.0)
-        self.assertEqual(_confirmation_boost(1.2, 1.0), 0.0)
         # Fully backed on both legs earns the maximum.
-        self.assertEqual(_confirmation_boost(2.5, 2.0), CONFIRMATION_BOOST_MAX)
-        # Halfway on one leg only.
-        half = _confirmation_boost(1.7, 0.5)
-        self.assertGreater(half, 0.0)
-        self.assertLess(half, CONFIRMATION_BOOST_MAX)
+        self.assertEqual(_confirmation_boost(2.0, 1.6), CONFIRMATION_BOOST_MAX)
+        self.assertEqual(_confirmation_boost(3.0, 2.5), CONFIRMATION_BOOST_MAX)
+        # Partly backed earns a partial share.
+        partial = _confirmation_boost(1.5, 1.2)
+        self.assertGreater(partial, 0.0)
+        self.assertLess(partial, CONFIRMATION_BOOST_MAX)
+        # The legs are independent: heavy volume alone still earns something.
+        self.assertGreater(_confirmation_boost(2.0, 0.5), 0.0)
+        self.assertGreater(_confirmation_boost(0.5, 1.6), 0.0)
 
     def test_confirmation_boost_is_never_negative(self):
         from app.core.sma_strategy import _confirmation_boost
