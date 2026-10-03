@@ -84,6 +84,25 @@ class Settings(BaseSettings):
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
 
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        """``database_url`` with an explicit, installed PostgreSQL driver.
+
+        Neon and Render hand out bare ``postgresql://`` URLs (Heroku-style
+        ``postgres://`` too) with no driver named. SQLAlchemy then picks its own
+        default, which varies by version — and fails with
+        ``ModuleNotFoundError: No module named 'psycopg'`` when that default is
+        psycopg3 (``psycopg``) while only psycopg2 is installed.
+
+        We standardise on psycopg2 so the driver never depends on the installed
+        SQLAlchemy version.
+        """
+        url = (self.database_url or "").strip()
+        for prefix in ("postgres://", "postgresql://", "postgresql+psycopg://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg2://" + url[len(prefix):]
+        return url
+
 
 @lru_cache
 def get_settings() -> Settings:

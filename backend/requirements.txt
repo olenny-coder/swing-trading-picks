@@ -6,8 +6,12 @@ pydantic-settings>=2.2
 
 # Database
 SQLAlchemy>=2.0,<3.0
-# PostgreSQL driver (used in production; optional for the SQLite demo mode)
+# PostgreSQL driver (used in production; optional for the SQLite demo mode).
+# psycopg2 is the one the app standardises on (see Settings.sqlalchemy_database_url);
+# psycopg3 is installed as well so an explicit postgresql+psycopg:// URL also works
+# on newer Python versions where psycopg2 wheels may lag.
 psycopg2-binary>=2.9
+psycopg[binary]>=3.2
 
 # Security
 cryptography>=42.0
