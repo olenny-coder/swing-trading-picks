@@ -31,6 +31,7 @@ from ..core.sma_strategy import MIN_BARS, analyze_ticker
 from ..core.timeframes import (
     DAILY,
     TIMEFRAMES,
+    chart_window,
     is_complete_period,
     min_bars,
     normalise,
@@ -402,7 +403,9 @@ def detail_payload(signal_id: int) -> dict | None:
     if signal is None:
         return None
 
-    bars = data["bars_by_ticker"].get(signal["ticker"], [])[-CHART_BARS:]
+    timeframe = normalise(signal.get("timeframe"))
+    daily = data["bars_by_ticker"].get(signal["ticker"], [])
+    bars = resample(daily[-chart_window(timeframe) :], timeframe)
     closes = [b.close for b in bars]
     return {
         "signal": signal,

@@ -19,8 +19,110 @@ os.environ["ADMIN_PASSWORD"] = "testpass"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.core.constants import SETUPS  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services.demo_service import DEMO_ID_BASE  # noqa: E402
+
+
+class TestTimeframeFiltering(unittest.TestCase):
+    """The interval query parameter must actually reach the query.
+
+    Regression guard: the filter dependency once omitted `timeframe`, so every
+    interval silently returned the daily list.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
+
+    @staticmethod
+    def _params(timeframe: str | None = None, setup: str | None = None) -> dict:
+        params = {"limit": 100}
+        if timeframe:
+            params["timeframe"] = timeframe
+        if setup:
+            params["setup"] = setup
+        return params
+
+    def test_guest_daily_view_respects_the_interval(self):
+        seen = {}
+        for timeframe in ("DAILY", "WEEKLY", "MONTHLY"):
+            body = self.client.get(
+                "/api/signals/daily", params=self._params(timeframe)
+            ).json()
+            self.assertTrue(body["demo"])
+            for signal in body["signals"]:
+                self.assertEqual(signal["timeframe"], timeframe)
+            seen[timeframe] = sorted(s["ticker"] for s in body["signals"])
+
+        self.assertTrue(seen["DAILY"], "the demo should have daily picks")
+        # The whole point of the filter: intervals are not the same list.
+        self.assertNotEqual(seen["DAILY"], seen["WEEKLY"])
+
+    def test_guest_history_respects_the_interval(self):
+        for timeframe in ("DAILY", "WEEKLY"):
+            body = self.client.get("/api/signals", params=self._params(timeframe)).json()
+            self.assertTrue(body["signals"])
+            for signal in body["signals"]:
+                self.assertEqual(signal["timeframe"], timeframe)
+
+    def test_setup_filter_is_applied(self):
+        body = self.client.get("/api/signals", params=self._params("DAILY", "DC1")).json()
+        self.assertTrue(body["signals"], "the demo should contain DC1 picks")
+        for signal in body["signals"]:
+            self.assertEqual(signal["setup"], "DC1")
+
+    def test_an_unknown_interval_falls_back_to_daily(self):
+        body = self.client.get("/api/signals/daily", params=self._params("FORTNIGHTLY")).json()
+        for signal in body["signals"]:
+            self.assertEqual(signal["timeframe"], "DAILY")
+
+    def test_accuracy_respects_the_interval(self):
+        daily = self.client.get("/api/signals/accuracy", params={"timeframe": "DAILY"}).json()
+        weekly = self.client.get("/api/signals/accuracy", params={"timeframe": "WEEKLY"}).json()
+        self.assertEqual(daily["timeframe"], "DAILY")
+        self.assertEqual(weekly["timeframe"], "WEEKLY")
+
+    def test_demo_ids_never_collide_with_real_ones(self):
+        body = self.client.get("/api/signals", params=self._params("DAILY")).json()
+        for signal in body["signals"]:
+            self.assertGreaterEqual(signal["id"], DEMO_ID_BASE)
+
+    def test_every_demo_signal_uses_a_known_setup(self):
+        for timeframe in ("DAILY", "WEEKLY", "MONTHLY"):
+            body = self.client.get("/api/signals", params=self._params(timeframe)).json()
+            for signal in body["signals"]:
+                self.assertIn(signal["setup"], SETUPS)
+
+    def test_detail_chart_uses_the_signals_own_interval(self):
+        """A weekly pick must chart weekly candles, not daily ones."""
+        for timeframe in ("DAILY", "WEEKLY"):
+            listing = self.client.get("/api/signals", params=self._params(timeframe)).json()
+            if not listing["signals"]:
+                continue
+            signal_id = listing["signals"][0]["id"]
+            detail = self.client.get(f"/api/signals/{signal_id}").json()
+            self.assertEqual(detail["signal"]["timeframe"], timeframe)
+            bars = detail["bars"]
+            self.assertTrue(bars, f"expected chart bars for {timeframe}")
+            if timeframe == "DAILY" or len(bars) < 3:
+                continue
+            # Consecutive weekly candles are about seven days apart; daily ones
+            # (the old behaviour) would be one or two.
+            from datetime import date as _date
+
+            gaps = [
+                (_date.fromisoformat(bars[i + 1]["date"]) - _date.fromisoformat(bars[i]["date"])).days
+                for i in range(min(5, len(bars) - 1))
+            ]
+            self.assertGreaterEqual(
+                min(gaps), 5, f"weekly candles should be about a week apart, got {gaps}"
+            )
 
 
 class TestDemoMode(unittest.TestCase):

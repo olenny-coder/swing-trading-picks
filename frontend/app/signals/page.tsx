@@ -54,16 +54,21 @@ function FactorList({
   if (rows.length === 0) return null;
   return (
     <div>
-      <h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      <h5 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         {title}
       </h5>
-      <ul className="space-y-1 text-xs text-slate-400">
+      <ul className="space-y-2 text-xs">
         {rows.map(([key, label]) => (
-          <li key={key} className="flex items-baseline justify-between gap-3">
-            <span>
-              • <span className="text-slate-300">{label}</span>
+          <li key={key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span aria-hidden="true" className="select-none text-slate-600">
+              •
             </span>
-            <span className="font-mono text-slate-300">
+            {/* basis-full keeps the description on its own line on a phone, so
+                the score never squeezes the text into a narrow column. */}
+            <span className="min-w-0 flex-1 basis-full leading-relaxed text-slate-400 sm:basis-0">
+              {label}
+            </span>
+            <span className="font-mono font-semibold text-slate-300">
               {Math.round(components[`factor_${key}`])}
             </span>
           </li>
@@ -123,18 +128,28 @@ function ConfidenceDerivation({
         Confidence is a <strong className="text-slate-200">blended rating</strong> built from two
         factor groups, each scored from 0 to 100:
       </p>
-      <ul className="space-y-1 text-sm text-slate-400">
-        <li>
-          • <span className="text-slate-200">Continuation factors</span> describe the trend the setup
-          wants to ride.
+      <ul className="space-y-2 text-sm text-slate-400">
+        <li className="flex gap-2">
+          <span aria-hidden="true" className="select-none text-slate-600">
+            •
+          </span>
+          <span className="min-w-0 flex-1 leading-relaxed">
+            <span className="text-slate-200">Continuation factors</span> describe the trend the
+            setup wants to ride.
+          </span>
         </li>
-        <li>
-          • <span className="text-slate-200">Reversal factors</span> describe the turn that triggers
-          the entry — the end of a pullback for continuation setups, or a genuine change of direction
-          for reversal setups.
+        <li className="flex gap-2">
+          <span aria-hidden="true" className="select-none text-slate-600">
+            •
+          </span>
+          <span className="min-w-0 flex-1 leading-relaxed">
+            <span className="text-slate-200">Reversal factors</span> describe the turn that triggers
+            the entry — the end of a pullback for continuation setups, or a genuine change of
+            direction for reversal setups.
+          </span>
         </li>
       </ul>
-      <p className="text-sm text-slate-400">
+      <p className="text-sm leading-relaxed text-slate-400">
         The two groups are weighted according to the setup family (continuation setups lean on
         continuation evidence, reversal setups lean on reversal evidence). A set of context
         adjustments is then applied, including a bonus when the entry candle is confirmed by both
@@ -168,95 +183,102 @@ function ConfidenceDerivation({
               </span>
             </span>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
-            A setup earns the bonus only once volume clears 1.2× its average and the entry candle
-            expands past one Average True Range; it is never a penalty.
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            A setup earns the bonus once volume is above its 20-period average and the entry candle
+            is at least 0.8 of an Average True Range. It is never a penalty, so a quiet candle simply
+            earns nothing.
           </p>
         </div>
       )}
 
-      {/* Step 1 — the blend */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[460px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-slate-400">
-            <tr>
-              <th className="py-2 pr-3">Factor group</th>
-              <th className="py-2 pr-3">Score</th>
-              <th className="py-2 pr-3">Weight</th>
-              <th className="py-2">Contribution</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g) => (
-              <tr key={g.key} className="border-t border-slate-800">
-                <td className="py-2 pr-3 text-slate-300">{GROUP_LABELS[g.key]}</td>
-                <td className="py-2 pr-3 font-mono">{Math.round(g.score)}</td>
-                <td className="py-2 pr-3 font-mono text-slate-400">{Math.round(g.weight)}%</td>
-                <td className="py-2 font-mono text-emerald-400">
-                  {((g.score * g.weight) / 100).toFixed(1)}
-                </td>
-              </tr>
-            ))}
-            <tr className="border-t border-slate-600 font-semibold">
-              <td className="py-2 pr-3">Blend</td>
-              <td className="py-2 pr-3" />
-              <td className="py-2 pr-3 font-mono text-slate-400">100%</td>
-              <td className="py-2 font-mono text-emerald-400">{blend.toFixed(1)}</td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Step 1 — the blend. Stacked rows rather than a table: a four-column
+          table needs horizontal scrolling on a phone. */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Step 1 — blend the two factor groups
+        </h4>
+        {groups.map((g) => (
+          <div
+            key={g.key}
+            className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2.5"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-medium text-slate-200">{GROUP_LABELS[g.key]}</span>
+              <span className="font-mono text-slate-100">{Math.round(g.score)}</span>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-400">
+              Weighted {Math.round(g.weight)}% → contributes{" "}
+              <span className="font-mono text-emerald-400">
+                {((g.score * g.weight) / 100).toFixed(1)}
+              </span>{" "}
+              points
+            </p>
+          </div>
+        ))}
+        <div className="flex items-baseline justify-between gap-3 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2.5 font-semibold">
+          <span>Blend</span>
+          <span className="font-mono text-emerald-400">{blend.toFixed(1)}</span>
+        </div>
       </div>
 
       {/* Step 2 — context adjustments */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[460px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-slate-400">
-            <tr>
-              <th className="py-2 pr-3">Context adjustment</th>
-              <th className="py-2">Impact</th>
-            </tr>
-          </thead>
-          <tbody>
-            {adjustments.map((a) => (
-              <tr key={a.key} className="border-t border-slate-800">
-                <td className="py-2 pr-3 text-slate-300">{a.label}</td>
-                <td
-                  className={`py-2 font-mono ${
-                    a.value > 0 ? "text-emerald-400" : a.value < 0 ? "text-red-400" : "text-slate-400"
-                  }`}
-                >
-                  {signed(a.value)}
-                </td>
-              </tr>
-            ))}
-            <tr className="border-t border-slate-600 font-semibold">
-              <td className="py-2 pr-3">
-                Blend {blend.toFixed(1)} {adjustments.map((a) => signed(a.value)).join(" ")}
-              </td>
-              <td className="py-2 font-mono text-emerald-400">{confidence.toFixed(1)}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Step 2 — apply the context adjustments
+        </h4>
+        <ul className="space-y-2">
+          {adjustments.map((a) => (
+            <li
+              key={a.key}
+              className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2.5"
+            >
+              <span className="min-w-0 flex-1 basis-full leading-relaxed text-slate-300 sm:basis-0">
+                {a.label}
+              </span>
+              <span
+                className={`font-mono font-semibold ${
+                  a.value > 0
+                    ? "text-emerald-400"
+                    : a.value < 0
+                      ? "text-red-400"
+                      : "text-slate-400"
+                }`}
+              >
+                {signed(a.value)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2.5 font-semibold">
+          <span className="leading-relaxed">
+            Blend {blend.toFixed(1)} {adjustments.map((a) => signed(a.value)).join(" ")}
+          </span>
+          <span className="font-mono text-emerald-400">{confidence.toFixed(1)}</span>
+        </div>
       </div>
 
-      <p className="text-sm text-slate-300">
+      <p className="text-sm leading-relaxed text-slate-300">
         Blended confidence:{" "}
         <span className="font-mono font-semibold text-emerald-400">{confidence.toFixed(1)}</span> →{" "}
         <span className="font-semibold">{confidenceLabel(confidence)}</span>
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
           What each factor measures
         </h4>
-        <FactorList title="Continuation factors" factors={CONTINUATION_FACTORS} components={components} />
+        <FactorList
+          title="Continuation factors"
+          factors={CONTINUATION_FACTORS}
+          components={components}
+        />
         <FactorList title="Reversal factors" factors={REVERSAL_FACTORS} components={components} />
       </div>
 
-      <p className="text-xs text-slate-500">
-        Labels: Low 0–40 · Medium 41–70 · High 71–100. A structural stop further than 15% from entry
-        is rejected as untradeable, and earnings within 7 days suppress the signal entirely unless
-        confidence is above 80 and earnings plays are enabled. The blend weights are
+      <p className="text-xs leading-relaxed text-slate-500">
+        Labels: Low 0–40 · Medium 41–70 · High 71–100. A structural stop further than the timeframe's
+        limit is rejected as untradeable, and earnings within 7 days suppress the signal entirely
+        unless confidence is above 80 and earnings plays are enabled. The blend weights are
         <code className="mx-1 rounded bg-slate-800 px-1">FAMILY_WEIGHTS</code> in
         <code className="mx-1 rounded bg-slate-800 px-1">backend/app/core/sma_strategy.py</code>.
       </p>
@@ -436,55 +458,48 @@ function SignalDetail() {
         }
       >
         <div className="space-y-3">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm leading-relaxed text-slate-400">
             What argues <strong className="text-slate-200">against</strong> this {s.type}{" "}
-            recommendation — the &ldquo;counter&rdquo; case. Both rows are penalties: they are
+            recommendation — the &ldquo;counter&rdquo; case. Both entries are penalties: they are
             subtracted inside the blended confidence, and a media figure only exists once the
             research agent has run.
           </p>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[440px] text-left text-sm">
-              <thead className="text-xs uppercase tracking-wide text-slate-400">
-                <tr>
-                  <th className="py-2 pr-3">Source</th>
-                  <th className="py-2 pr-3">Impact</th>
-                  <th className="py-2">What it reflects</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t border-slate-800">
-                  <td className="py-2 pr-3 text-slate-300">Macro events</td>
-                  <td
-                    className={`py-2 pr-3 font-mono ${
-                      Number(flags.counter_impact ?? 0) < 0 ? "text-red-400" : "text-slate-400"
-                    }`}
-                  >
-                    {signed(Number(flags.counter_impact ?? 0))}
-                  </td>
-                  <td className="py-2 text-xs text-slate-400">
-                    {((flags.counter_impact_drivers as string[] | undefined) ?? []).length
-                      ? (flags.counter_impact_drivers as string[]).join("; ")
-                      : "no material macro opposition"}
-                  </td>
-                </tr>
-                <tr className="border-t border-slate-800">
-                  <td className="py-2 pr-3 text-slate-300">Media / news</td>
-                  <td className="py-2 pr-3 font-mono text-red-400">
-                    {s.annotation?.counter_impact
-                      ? `−${Number(s.annotation.counter_impact).toFixed(1)}`
-                      : "—"}
-                  </td>
-                  <td className="py-2 text-xs text-slate-400">
-                    {s.annotation
-                      ? `research agent read (${s.annotation.sentiment}); its net effect is already inside the ${signed(
-                          s.annotation.confidence_delta,
-                        )} adjustment`
-                      : "run the research agent to assess adverse coverage"}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <ul className="space-y-2">
+            <li className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium text-slate-200">Macro events</span>
+                <span
+                  className={`font-mono font-semibold ${
+                    Number(flags.counter_impact ?? 0) < 0 ? "text-red-400" : "text-slate-400"
+                  }`}
+                >
+                  {signed(Number(flags.counter_impact ?? 0))}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                {((flags.counter_impact_drivers as string[] | undefined) ?? []).length
+                  ? (flags.counter_impact_drivers as string[]).join("; ")
+                  : "No material macro opposition."}
+              </p>
+            </li>
+            <li className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium text-slate-200">Media and news</span>
+                <span className="font-mono font-semibold text-red-400">
+                  {s.annotation?.counter_impact
+                    ? `−${Number(s.annotation.counter_impact).toFixed(1)}`
+                    : "—"}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                {s.annotation
+                  ? `Research agent read: ${s.annotation.sentiment}. Its net effect is already inside the ${signed(
+                      s.annotation.confidence_delta,
+                    )} adjustment`
+                  : "Run the research agent to assess adverse coverage."}
+              </p>
+            </li>
+          </ul>
         </div>
       </Collapsible>
 
@@ -499,10 +514,15 @@ function SignalDetail() {
       </Collapsible>
 
       <Collapsible title="Triggered rules" subtitle={`${(s.triggered_rules ?? []).length} matched`}>
-        <ul className="space-y-1">
+        <ul className="space-y-2">
           {(s.triggered_rules ?? []).map((rule) => (
-            <li key={rule} className="text-sm text-slate-300">
-              • {ruleLabel(rule)}
+            <li key={rule} className="flex gap-2 text-sm text-slate-300">
+              <span aria-hidden="true" className="select-none text-slate-600">
+                •
+              </span>
+              {/* Hanging indent: wrapped lines stay aligned under the text
+                  rather than under the bullet. */}
+              <span className="min-w-0 flex-1 leading-relaxed">{ruleLabel(rule)}</span>
             </li>
           ))}
           {(s.triggered_rules ?? []).length === 0 && (

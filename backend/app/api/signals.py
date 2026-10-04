@@ -30,7 +30,7 @@ from ..schemas import (
 from ..services import demo_service, outcome_service
 from ..services.credentials import resolve_credentials
 from ..services.data_service import load_bars
-from ..core.timeframes import normalise
+from ..core.timeframes import chart_window, normalise, resample
 from .deps import get_current_admin, get_optional_user
 
 router = APIRouter(prefix="/signals", tags=["signals"])
@@ -126,6 +126,8 @@ def _summary(db: Session, signals: list[Signal]) -> SummaryResponse:
 
 def _filters(
     type: str | None = Query(default=None),
+    setup: str | None = Query(default=None),
+    timeframe: str | None = Query(default=None),
     sector: str | None = Query(default=None),
     min_confidence: float | None = Query(default=None),
     exclude_earnings_week: bool = Query(default=False),
@@ -136,6 +138,8 @@ def _filters(
 ) -> SignalFilters:
     return SignalFilters(
         type=type,
+        setup=setup,
+        timeframe=timeframe,
         sector=sector,
         min_confidence=min_confidence,
         exclude_earnings_week=exclude_earnings_week,
@@ -272,7 +276,10 @@ def signal_detail(
     if sig is None:
         raise HTTPException(status_code=404, detail="Signal not found")
 
-    bars = load_bars(db, sig.ticker, sig.date - timedelta(days=180), sig.date)
+    # Chart the candles the setup was actually read on, not always daily ones.
+    timeframe = normalise(sig.timeframe)
+    daily_bars = load_bars(db, sig.ticker, sig.date - timedelta(days=chart_window(timeframe)), sig.date)
+    bars = resample(daily_bars, timeframe)
     bar_outs = [BarOut(date=b.date, open=b.open, high=b.high, low=b.low, close=b.close, volume=b.volume) for b in bars]
 
     closes = [b.close for b in bars]

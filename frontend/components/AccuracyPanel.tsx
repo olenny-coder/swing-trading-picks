@@ -96,7 +96,30 @@ export function AccuracyPanel({
           <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold">
             Hit rate by setup ({TIMEFRAME_LABELS[timeframe]})
           </div>
-          <div className="overflow-x-auto">
+          {/* Phones: one card per setup. A five-column table would need
+              horizontal scrolling on a 375px screen. */}
+          <ul className="divide-y divide-slate-800/60 md:hidden">
+            {accuracy.by_setup.map((row) => (
+              <li key={row.setup} className="px-4 py-3">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-mono font-semibold text-slate-200">{row.setup}</span>
+                  <span className="font-mono text-sm">
+                    {row.win_rate_pct == null ? "—" : `${row.win_rate_pct.toFixed(0)}%`}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">
+                  {SETUP_LABELS[row.setup as SetupCode] ?? ""}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                  {row.total} pick{row.total === 1 ? "" : "s"} ·{" "}
+                  <span className="text-emerald-400">{row.TARGET_HIT} reached target</span> ·{" "}
+                  <span className="text-red-400">{row.STOP_HIT} reached stop</span>
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[520px] text-left text-sm">
               <thead className="bg-slate-900/80 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
@@ -130,7 +153,7 @@ export function AccuracyPanel({
         </div>
       )}
 
-      <p className="text-xs text-slate-500">
+      <p className="text-xs leading-relaxed text-slate-500">
         A win means price reached the target before the stop. When one candle spans both levels the
         stop is counted first, so this figure is deliberately conservative.
       </p>

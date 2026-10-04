@@ -225,6 +225,9 @@ The interval names the **candle series the rules are read on**, not a separate s
 weekly setup is the same rule set evaluated on weekly candles, so the momentum candle, the
 liquidity point and the 5–6 candle time limit all span weeks rather than days.
 
+The **detail chart follows the pick's own interval** — open a weekly signal and you get weekly
+candles with the exponential moving averages recalculated on them, not the daily series.
+
 Aggregation uses the usual convention: open is the first open of the period, high and low are the
 period extremes, close is the last close, and volume is the sum. The resulting candle is stamped
 with the **last trading day** of the period, so a signal is dated to the candle it completed.

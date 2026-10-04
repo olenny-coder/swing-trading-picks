@@ -52,6 +52,19 @@ LOOKBACK_DAYS_BY_TIMEFRAME: dict[str, int] = {
     MONTHLY: 2000,
 }
 
+#: Daily-bar window pulled for a detail chart, sized to yield roughly 120
+#: candles of the requested timeframe so the chart matches the analysis.
+CHART_DAYS_BY_TIMEFRAME: dict[str, int] = {
+    DAILY: 200,
+    WEEKLY: 900,
+    MONTHLY: 4000,
+}
+
+
+def chart_window(timeframe: str) -> int:
+    """Daily-bar window to load so a chart shows the interval being analysed."""
+    return CHART_DAYS_BY_TIMEFRAME.get(normalise(timeframe), CHART_DAYS_BY_TIMEFRAME[DAILY])
+
 
 def min_bars(timeframe: str) -> int:
     return MIN_BARS_BY_TIMEFRAME.get(timeframe, MIN_BARS_BY_TIMEFRAME[DAILY])
