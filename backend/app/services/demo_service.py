@@ -93,7 +93,6 @@ def _to_signal(draft, timeframe: str, candle_date: date, signal_id: int) -> dict
         "confidence_components": draft.confidence_components,
         "triggered_rules": draft.triggered_rules,
         "event_flags": draft.event_flags,
-        "option_recommendation": None,
         "annotation": None,
         "outcome": None,
     }
@@ -422,7 +421,6 @@ def detail_payload(signal_id: int) -> dict | None:
         ],
         "indicators": {"ema20": ema(closes, 20), "ema50": ema(closes, 50)},
         "doji_highlight": False,
-        "option_chain": [],
         "demo": True,
     }
 

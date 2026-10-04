@@ -46,31 +46,6 @@ class UniverseMeta:
 
 
 @dataclass
-class OptionContract:
-    symbol: str
-    strike: float
-    type: str  # "call" | "put"
-    expiry: date | None = None
-    bid: float | None = None
-    ask: float | None = None
-    last: float | None = None
-    open_interest: int | None = None
-    implied_volatility: float | None = None
-
-    @property
-    def mid(self) -> float | None:
-        if self.bid is not None and self.ask is not None:
-            return (self.bid + self.ask) / 2
-        return self.last
-
-    @property
-    def spread_pct(self) -> float | None:
-        if self.bid is not None and self.ask is not None and self.ask > 0:
-            return (self.ask - self.bid) / self.ask * 100
-        return None
-
-
-@dataclass
 class MacroEventData:
     title: str
     datetime: datetime
@@ -128,10 +103,6 @@ class MarketDataProvider(ABC):
     @abstractmethod
     def get_quote(self, ticker: str) -> Quote:
         ...
-
-    def get_options_chain(self, ticker: str, side: str = "put") -> list[OptionContract]:
-        """Optional; returns [] when unavailable (e.g. no options subscription)."""
-        return []
 
 
 class MacroDataProvider(ABC):

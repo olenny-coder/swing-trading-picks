@@ -6,7 +6,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
 [![Tests](https://img.shields.io/badge/tests-33%20passing-brightgreen.svg)](backend/tests)
 
-> **Topics:** `swing-trading` · `trading-signals` · `stock-screener` · `technical-analysis` · `sma` · `breakout` · `put-options` · `alpaca` · `fastapi` · `nextjs` · `tailwindcss` · `lightweight-charts` · `backtesting` · `fintech` · `quant`
+> **Topics:** `swing-trading` · `trading-signals` · `stock-screener` · `technical-analysis` · `sma` · `breakout` · `price-action` · `micro-e-mini` · `futures` · `alpaca` · `fastapi` · `nextjs` · `tailwindcss` · `lightweight-charts` · `backtesting` · `fintech` · `quant`
 
 A production-ready swing-trading signal application for **US equities**. It scans daily charts with the **SMA 20/50 flow system** for eight high-probability continuation and reversal setups (UC1, UC2, DC1, DC2, UR1, DR1, UR2, DR2), each with an entry price, target, stop-loss, and a 0–100 confidence rating. Signals are filtered by **macroeconomic developments** and the **earnings calendar**, and the whole app is **fully responsive** (desktop + mobile).
 
@@ -19,14 +19,15 @@ A production-ready swing-trading signal application for **US equities**. It scan
 - **Eight setups from the SMA 20/50 flow system** (see [Signal engine reference](#signal-engine-reference))
   - Continuation: `UC1` / `UC2` (bullish, shallow / deep pullback), `DC1` / `DC2` (bearish).
   - Reversal: `UR1` (early upside), `DR1` (early downside), `UR2` (double top), `DR2` (double bottom).
-  - Each setup is confirmed by an **entry-execution candle** (a momentum candle) closing beyond the **liquidity point** within a 5–6 candle time limit; bearish setups are traded via **liquid put options** (never shorting).
+  - Each setup is confirmed by an **entry-execution candle** (a momentum candle) closing beyond the **liquidity point** within a 5–6 candle time limit. Levels are quoted on the underlying itself — the app reads **stock prices only**, with no options leg.
 - **Three timeframes** — the same rules are read on **daily**, **weekly** and **monthly** candles, with a filter on both the picks and the history pages. An in-progress candle is never analysed: a weekly setup must be confirmed by a completed week and a monthly setup by a completed month.
 - **Volume and Average True Range confirmation** — an entry candle that trades on above-average volume *and* expands beyond its Average True Range earns a bonus of up to **+6 confidence points**. The adjustment is positive-only, so a quiet but otherwise valid setup is never penalised.
 - **Retrospective accuracy** — every pick is replayed against the sessions that followed it and marked **target reached**, **stop reached**, **still open** or **expired unresolved**, with the hit rate, average win, average loss and a by-setup breakdown. When a single candle spans both levels the stop is counted first, so the hit rate is deliberately conservative.
 - **Blended confidence** — a rating built from two factor groups, adjusted for regime, sector, counter-impact and volume/range confirmation. Labeled Low/Medium/High. See [How confidence is derived](#how-confidence-is-derived).
 - **Macro & event filtering** — market regime (SPY vs 200-day MA, VIX, yield curve), sector rotation, interest-rate sensitivity, earnings-proximity suppression, and high-impact-event confidence adjustment.
 - **API key management** — enter/update Alpaca (paper/live) and optional Finnhub/Polygon/FRED keys from the UI; keys are **encrypted at rest** (Fernet), **masked** in the UI, never sent to the browser, and fall back to environment variables.
-- **Responsive dashboard** — top-20 shortlist (with sector diversity), per-setup counters, filters (direction + setup), macro/earnings widgets, and interactive charts (TradingView Lightweight Charts) with an options chain.
+- **Responsive dashboard** — top-20 shortlist (with sector diversity), per-setup counters, filters (direction + setup), macro/earnings widgets, and interactive charts (TradingView Lightweight Charts) drawn on the pick's own interval.
+- **Index futures (MES)** — the Micro E-mini S&P 500 is considered alongside the equity universe when its price history is available. It is read with the same rules, and skipped silently when the futures source is unreachable.
 - **Backtesting** — event-aware replay with win rate, avg return, max drawdown, profit factor, Sharpe, and walk-forward-capable CLI.
 - **Scheduling** — APScheduler daily jobs (ingestion, macro, signal generation), plus a GitHub Actions cron entrypoint.
 - **Public read / admin control** — the daily view, history, macro dashboard, and charts render **without logging in**, but anonymous visitors only ever receive a **synthetic DEMO dataset**; the real shortlist is served solely to the signed-in admin. Only the admin can refresh data or change API keys/settings.
@@ -156,13 +157,16 @@ ALPACA_PAPER=true            # false for live
 DATA_PROVIDER=auto           # auto | alpaca | polygon | mock
 ```
 
-Optional macro/options providers (all optional; MOCK fills gaps when absent):
+Optional macro providers (all optional; MOCK fills gaps when absent):
 
 ```bash
 FINNHUB_API_KEY=...   # economic + earnings calendars
 FRED_API_KEY=...      # 10Y yield, Fed Funds, VIX
-POLYGON_API_KEY=...   # alternative bars / options chain
+POLYGON_API_KEY=...   # alternative price bars
 ```
+
+Index futures need no key: MES comes from Yahoo's public chart API, and
+`INDEX_FUTURES_ENABLED=false` switches them off entirely.
 
 ---
 
@@ -243,6 +247,33 @@ scales with the timeframe instead of rejecting every monthly setup.
 > The rules are strict, so a higher timeframe can legitimately return **nothing** on the latest
 > candle. The UI says so explicitly rather than showing an empty table, and the History page still
 > lists earlier picks for that interval.
+
+---
+
+## Index futures (MES)
+
+The **Micro E-mini S&P 500** (`MES`) is considered alongside the equity universe. It is one tenth
+the size of the full-size `ES` contract, which is what makes it usable for a swing-trading account.
+
+| Aspect | Detail |
+|---|---|
+| Source | Yahoo Finance continuous front-month contract (`MES=F`), no API key |
+| Why separate | Neither Alpaca's stock feed nor Polygon's equity endpoints carry index futures |
+| Rules | Exactly the same engine — it is just another instrument in the universe |
+| Sector | `Index Futures`, so it is identifiable in the list and filters |
+| Availability | **Conditional.** Absent when the bars cannot be fetched; equities are unaffected |
+| Switch | `INDEX_FUTURES_ENABLED=false` disables it entirely |
+
+Two things differ from equities and are worth knowing:
+
+- **Session.** Futures trade nearly 24 hours, so a daily futures candle covers the whole Globex
+  session rather than the NYSE cash session. The candle is stamped with the exchange-local session
+  date.
+- **No earnings.** There is no earnings calendar for a future, so the earnings-proximity
+  suppression and gap-risk terms simply do not apply to it.
+
+Adding another contract is a one-line change in `backend/app/core/universe.py` (`FUTURES` plus its
+Yahoo symbol in `YAHOO_SYMBOL_BY_FUTURE`).
 
 ---
 
@@ -383,7 +414,7 @@ earnings plays are enabled; and a structural stop further than the timeframe's l
 
 ---
 
-**Macro data** comes from **Yahoo Finance** (real SPY vs 200-day MA, VIX, 10-year yield, and sector-ETF relative strength) via `httpx` — no key required — with FRED/Finnhub (optional keys) and the built-in MOCK provider as fallbacks. Stock prices/signals continue to use **Alpaca**.
+**Macro data** comes from **Yahoo Finance** (real SPY vs 200-day MA, VIX, 10-year yield, and sector-ETF relative strength) via `httpx` — no key required — with FRED/Finnhub (optional keys) and the built-in MOCK provider as fallbacks. Stock prices/signals continue to use **Alpaca**. **Index futures** (MES) also come from Yahoo, since the equity providers do not carry them.
 
 ---
 
@@ -515,7 +546,7 @@ If you prefer separate hosts, the frontend is still self-contained:
 │   │   ├── api/            # FastAPI routers (auth, settings, signals, macro, backtest, refresh)
 │   │   ├── core/           # sma_strategy (setup engine), indicators, confidence, regime, backtest
 │   │   ├── providers/      # Alpaca / Finnhub / FRED / Polygon / Yahoo / MOCK adapters
-│   │   ├── services/       # credentials, data ingestion, macro, signals, options, refresh
+│   │   ├── services/       # credentials, data ingestion, macro, signals, outcomes, refresh
 │   │   ├── tasks/          # APScheduler jobs
 │   │   ├── models.py       # SQLAlchemy models
 │   │   ├── schemas.py      # Pydantic schemas
@@ -557,4 +588,4 @@ Released under the **[MIT License](LICENSE)** — free to use, modify, and distr
 
 ## Disclaimer
 
-This software is for educational and informational purposes only. It is **not** financial advice. Trading securities and options involves substantial risk of loss. Always do your own research.
+This software is for educational and informational purposes only. It is **not** financial advice. Trading securities, futures and options involves substantial risk of loss. Always do your own research.

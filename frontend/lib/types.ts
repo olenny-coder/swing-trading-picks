@@ -92,7 +92,6 @@ export interface SignalOut {
   confidence_components: Record<string, number> | null;
   triggered_rules: string[] | null;
   event_flags: Record<string, unknown> | null;
-  option_recommendation: OptionRecommendation | null;
   /** LLM research-agent output; null until the agent has annotated this signal. */
   annotation: SignalAnnotation | null;
   /** Retrospective result once the pick has resolved. */
@@ -133,24 +132,6 @@ export interface ResearchStatus {
   error: string | null;
 }
 
-export interface OptionRecommendation {
-  symbol: string;
-  strike: number;
-  expiry: string | null;
-  bid: number | null;
-  ask: number | null;
-  premium: number;
-  open_interest: number | null;
-  implied_volatility: number | null;
-  option_entry: number;
-  option_target: number;
-  option_stop: number;
-  underlying_entry: number;
-  underlying_target: number;
-  underlying_stop: number;
-  liquid: boolean;
-}
-
 export interface Summary {
   total_buys: number;
   total_sells: number;
@@ -185,17 +166,6 @@ export interface BarOut {
   volume: number;
 }
 
-export interface OptionContractOut {
-  symbol: string;
-  strike: number;
-  expiry: string | null;
-  bid: number | null;
-  ask: number | null;
-  last: number | null;
-  open_interest: number | null;
-  implied_volatility: number | null;
-}
-
 export interface SignalDetail {
   signal: SignalOut;
   bars: BarOut[];
@@ -208,7 +178,6 @@ export interface SignalDetail {
     macd_signal: (number | null)[];
   };
   doji_highlight: boolean;
-  option_chain: OptionContractOut[];
   /** True when this is the synthetic demo dataset (visitor not signed in). */
   demo?: boolean;
 }

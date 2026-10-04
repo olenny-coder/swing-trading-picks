@@ -111,7 +111,7 @@ class SignalOut(BaseModel):
     confidence_components: dict | None = None
     triggered_rules: list | None = None
     event_flags: dict | None = None
-    option_recommendation: dict | None = None
+    # Picks are derived from stock prices alone; no options data is attached.
     # LLM research agent output: sentiment, risk_flags, confidence_delta,
     # adjusted_confidence, rationale, model, created_at.
     annotation: dict | None = None
@@ -223,23 +223,11 @@ class BarOut(BaseModel):
     volume: float
 
 
-class OptionContractOut(BaseModel):
-    symbol: str
-    strike: float
-    expiry: date | None = None
-    bid: float | None = None
-    ask: float | None = None
-    last: float | None = None
-    open_interest: int | None = None
-    implied_volatility: float | None = None
-
-
 class SignalDetailOut(BaseModel):
     signal: SignalOut
     bars: list[BarOut]
     indicators: dict = {}
     doji_highlight: bool = False
-    option_chain: list[OptionContractOut] = []
     demo: bool = False
 
 

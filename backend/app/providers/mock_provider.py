@@ -15,7 +15,7 @@ import random
 from datetime import date, datetime, time, timedelta
 
 from ..core.constants import SECTOR_ETFS
-from ..core.universe import UNIVERSE
+from ..core.universe import FUTURES, UNIVERSE
 from .base import (
     Bar,
     EarningsData,
@@ -23,7 +23,6 @@ from .base import (
     MacroEventData,
     MacroSnapshotData,
     MarketDataProvider,
-    OptionContract,
     Quote,
     UniverseMeta,
 )
@@ -31,6 +30,10 @@ from .base import (
 HERO_DOJI_MOD = 2
 HERO_BUY_MOD = 0
 HERO_PUT_MOD = 7
+
+#: Index levels for the synthetic futures series, so MES does not sit at a
+#: single-stock price.
+_FUTURES_BASE_PRICE: dict[str, float] = {"MES": 5500.0}
 
 
 def _trading_days(start: date, end: date) -> list[date]:
@@ -48,6 +51,9 @@ def _rng(ticker: str) -> random.Random:
 
 
 def _base_price(ticker: str) -> float:
+    # Index futures sit at an index level, not a share price.
+    if ticker in _FUTURES_BASE_PRICE:
+        return _FUTURES_BASE_PRICE[ticker]
     return 10.0 + (sum(ord(c) for c in ticker) % 400) * 0.6
 
 
@@ -215,7 +221,9 @@ class MockMarketDataProvider(MarketDataProvider):
 
     def get_universe(self, min_price: float = 5.0, min_volume: float = 500_000.0) -> list[UniverseMeta]:
         out: list[UniverseMeta] = []
-        for ticker, name, sector in UNIVERSE:
+        # Futures are included so the demo shows the same instruments live data
+        # would; their synthetic series is clearly labelled as demo data.
+        for ticker, name, sector in list(UNIVERSE) + list(FUTURES):
             price = _base_price(ticker)
             vol = 500_000 + (sum(ord(c) for c in ticker) % 500) * 12_000
             if price >= min_price and vol >= min_volume:
@@ -239,32 +247,6 @@ class MockMarketDataProvider(MarketDataProvider):
             bid=round(last.close - spread / 2, 2),
             ask=round(last.close + spread / 2, 2),
         )
-
-    def get_options_chain(self, ticker: str, side: str = "put") -> list[OptionContract]:
-        rng = _rng(f"opt::{ticker}")
-        quote = self.get_quote(ticker)
-        contracts: list[OptionContract] = []
-        for i in range(12):
-            strike_pct = 1.0 - (i + 1) * 0.03 if side == "put" else 1.0 + (i + 1) * 0.03
-            strike = round(quote.price * strike_pct, 2)
-            mid = max(quote.price * 0.02 * rng.uniform(0.3, 1.5), 0.05)
-            spread = mid * rng.uniform(0.02, 0.08)
-            oi = rng.choice([40, 80, 120, 250, 500, 1200, 3000])
-            contracts.append(
-                OptionContract(
-                    symbol=f"{ticker}{date.today().strftime('%y%m%d')}{side[0].upper()}{strike}",
-                    strike=strike,
-                    type=side,
-                    expiry=date.today() + timedelta(days=rng.randint(7, 60)),
-                    bid=round(max(mid - spread / 2, 0.01), 2),
-                    ask=round(mid + spread / 2, 2),
-                    last=round(mid, 2),
-                    open_interest=oi,
-                    implied_volatility=round(rng.uniform(0.2, 0.7), 3),
-                )
-            )
-        return contracts
-
 
 class MockMacroProvider(MacroDataProvider):
     name = "mock"

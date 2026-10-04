@@ -120,9 +120,11 @@ Set these on **Render** and restart:
   want it warm — but it will still sleep per Render's policy.
 - **Both schedulers:** set `DISABLE_SCHEDULER=true` on Render so it doesn't fight
   GitHub Actions; GitHub Actions is the reliable scheduler.
-- **Options data:** put-option *contract* recommendations need an Alpaca options
-  subscription or a Polygon.io key; without them, bearish setups still appear with
-  underlying levels.
+- **No options leg:** the app reads stock prices only, so bearish setups are quoted on
+  the underlying itself — no options subscription is needed.
+- **Index futures (MES):** pulled from Yahoo's public chart API (no key). If Yahoo is
+  blocked from your host the futures are simply omitted; equities are unaffected. Set
+  `INDEX_FUTURES_ENABLED=false` to switch them off.
 - **Updating the UI:** any change under `frontend/` requires a Render rebuild (the UI is
   compiled into the image). Render auto-deploys on push, so just `git push`.
 - **Public repo warning:** if your repo is public, never commit `.env` or real

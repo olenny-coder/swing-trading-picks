@@ -24,27 +24,41 @@ feature still works.
 
 ## 3. Reading the Daily View
 
-- **Summary cards** show total buys, doji reversals, puts, average confidence,
-  the current market regime, VIX, and counts of upcoming macro events and
-  earnings risks.
+- **Summary cards** show total buys, total sells, continuation and reversal
+  counts, average confidence, the current market regime, VIX, and counts of
+  upcoming macro events and earnings risks.
+- The **interval selector** above the cards switches between **daily**, **weekly**
+  and **monthly** candles. These are the same rules read on a different candle
+  series, so each interval has its own list.
 - The **Top 20 / All** toggle switches between the diversity-capped shortlist
   and the full signal list.
-- Use **Filters** to narrow by signal type, sector, confidence, price, and to
-  exclude earnings-week or macro-risk names.
+- Use **Filters** to narrow by direction, setup, sector, confidence and price,
+  and to exclude earnings-week or macro-risk names.
 
 ### Signal types
 
 | Badge | Meaning | When to use |
 |---|---|---|
-| `BUY` | Momentum breakout | Trending stocks breaking to new highs |
-| `DOJI` | Doji reversal | A downtrend that prints a doji and confirms bullish the next day |
-| `PUT` | Bearish setup | Buying a put option on a breakdown (no shorting) |
+| `BUY` | Bullish setup | A trend resuming upward, or a completed downside reversal |
+| `SELL` | Bearish setup | A downtrend resuming downward, or a completed upside reversal |
+
+Levels are quoted on the **underlying itself**. The app reads stock prices only —
+there is no options leg, so a `SELL` is expressed by selling the instrument
+rather than by buying a put.
+
+Each signal also carries one of eight setups: `UC1`/`UC2` and `DC1`/`DC2` for
+continuation, `UR1`/`DR1` for early reversal, and `UR2`/`DR2` for double
+top/bottom reversals.
+
+Index futures such as **MES** (Micro E-mini S&P 500) appear in the same list when
+their price history is available, marked with the *Index Futures* sector.
 
 ### Columns
 
-- **Entry / Option** — for `PUT`, the recommended put premium and strike; for
-  buys, the entry price.
-- **Target / Stop** — profit target and stop-loss levels.
+- **Entry** — the price level the setup triggers at, with the last close beneath
+  it for reference.
+- **Target / Stop** — profit target and stop-loss levels, projected from the
+  structural stop and the setup's risk-to-reward ratio.
 - **Confidence** — 0–100 with a Low/Medium/High label.
 - **Events** — `ERN nd` (earnings within *n* days) and `MACRO` (high-impact
   event near) flags.
@@ -53,10 +67,13 @@ feature still works.
 
 Click any signal (or the *Chart* link) to open its detail page, which shows:
 
-- Entry / target / stop (and the full put-option recommendation for `PUT`).
-- An interactive candlestick chart with **EMA 20/50** overlays and a **doji
-  highlight**.
-- The **triggered rules** and the **confidence breakdown** (six sub-scores).
+- Entry, target and stop, plus the **result** once the pick has resolved.
+- An interactive candlestick chart drawn on the **pick's own interval**, with
+  **EMA 20/50** overlays and a **doji highlight**.
+- The **triggered rules**, written out in full.
+- The **confidence breakdown** showing the continuation and reversal factor
+  scores, the blend weights, and every context adjustment.
+- The **counter impact** — what macro events and media argue against the trade.
 - The **event context** (regime, VIX, earnings proximity, sector rotation).
 
 ## 5. Macro dashboard

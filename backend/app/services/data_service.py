@@ -120,6 +120,44 @@ def resolve_universe(provider: MarketDataProvider, min_price: float = 5.0, min_v
     return provider.get_universe(min_price=min_price, min_volume=min_volume)
 
 
+def ingest_index_futures(db: Session, start: date, end: date) -> dict:
+    """Best-effort ingestion of the index futures in ``core.universe.FUTURES``.
+
+    Index futures are not carried by the equity providers, so they come from a
+    separate key-free source. Any failure is reported rather than raised: a
+    futures outage must never fail an equity refresh.
+    """
+    from ..core.universe import FUTURES_TICKERS
+    from ..providers.registry import resolve_futures_provider
+
+    try:
+        provider = resolve_futures_provider()
+    except Exception as exc:  # pragma: no cover - defensive
+        return {"provider": None, "bars": 0, "error": f"{type(exc).__name__}: {exc}"}
+    if provider is None:
+        return {"provider": None, "bars": 0, "error": "index futures are disabled"}
+    try:
+        return {
+            "provider": provider.name,
+            "bars": ingest_bars(db, provider, FUTURES_TICKERS, start, end),
+        }
+    except Exception as exc:
+        return {"provider": provider.name, "bars": 0, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def futures_universe(db: Session) -> list[UniverseMeta]:
+    """Futures instruments that actually have stored bars, so they join the
+    universe only when their data is available."""
+    from ..core.universe import FUTURES
+
+    out: list[UniverseMeta] = []
+    for ticker, name, sector in FUTURES:
+        exists = db.query(DailyBar.id).filter(DailyBar.ticker == ticker).first()
+        if exists is not None:
+            out.append(UniverseMeta(ticker=ticker, name=name, sector=sector))
+    return out
+
+
 def latest_trading_day(db: Session) -> date | None:
     """Most recent bar date in the database (handles weekends/holidays)."""
     return db.query(func.max(DailyBar.date)).scalar()

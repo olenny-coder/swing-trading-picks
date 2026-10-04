@@ -189,7 +189,6 @@ def build_brief(db: Session, signal: Signal) -> str:
         f" | earnings {earnings_txt}"
         f" | macro sentiment {flags.get('macro_sentiment', 0)}"
         f" | high-impact event within 2d: {'yes' if flags.get('macro_risk') else 'no'}"
-        f" | options chain: {'yes' if flags.get('options_liquid') else 'unavailable'}"
         f" | engine macro counter-impact: {flags.get('counter_impact', 0)}"
         + (
             " (" + "; ".join(flags.get("counter_impact_drivers") or []) + ")"

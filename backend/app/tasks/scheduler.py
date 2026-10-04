@@ -43,9 +43,13 @@ def ingest_daily_job() -> dict:
         tickers = [m.ticker for m in universe]
         today = date.today()
         n_bars = data_service.ingest_bars(db, market, tickers, today - timedelta(days=BAR_HISTORY_DAYS), today)
+        # Index futures (MES) are best-effort and come from a separate source.
+        futures_info = data_service.ingest_index_futures(
+            db, today - timedelta(days=BAR_HISTORY_DAYS), today
+        )
         data_service.ingest_macro_events(db, macro, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS))
         data_service.ingest_earnings(db, macro, tickers, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS))
-        return {"bars": n_bars}
+        return {"bars": n_bars, "futures": futures_info}
     finally:
         db.close()
 

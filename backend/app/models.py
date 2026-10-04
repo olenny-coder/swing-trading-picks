@@ -145,6 +145,9 @@ class Signal(Base):
     confidence_components: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     triggered_rules: Mapped[list | None] = mapped_column(JSON, nullable=True)
     event_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Retired: the app reads stock prices only. The column is kept so rows
+    # written by earlier releases (which carried a put-option recommendation)
+    # still load; nothing writes or reads it any more.
     option_recommendation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # LLM research agent output (sentiment, risk flags, confidence adjustment).
     annotation: Mapped[dict | None] = mapped_column(JSON, nullable=True)

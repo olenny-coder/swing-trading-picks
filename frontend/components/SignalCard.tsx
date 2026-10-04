@@ -24,10 +24,7 @@ function EventFlags({ signal }: { signal: SignalOut }) {
 }
 
 export function SignalCard({ signal }: { signal: SignalOut }) {
-  const entry =
-    signal.type === "SELL" && signal.option_recommendation
-      ? `${formatPrice(signal.option_recommendation.premium)} (P${formatPrice(signal.option_recommendation.strike)})`
-      : formatPrice(signal.entry);
+  const entry = formatPrice(signal.entry);
 
   return (
     <Link

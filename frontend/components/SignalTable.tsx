@@ -28,17 +28,16 @@ function EventFlags({ signal }: { signal: SignalOut }) {
   );
 }
 
+/** Entry level on the underlying itself — picks carry no options data. */
 function EntryCell({ signal }: { signal: SignalOut }) {
-  if (signal.type === "SELL" && signal.option_recommendation) {
-    const o = signal.option_recommendation;
-    return (
-      <div>
-        <div className="font-mono text-sm">{formatPrice(o.premium)}</div>
-        <div className="text-[11px] text-slate-400">P{formatPrice(o.strike)} put</div>
+  return (
+    <div>
+      <div className="font-mono text-sm">{formatPrice(signal.entry)}</div>
+      <div className="text-[11px] text-slate-400">
+        close {formatPrice(signal.price)}
       </div>
-    );
-  }
-  return <div className="font-mono text-sm">{formatPrice(signal.entry)}</div>;
+    </div>
+  );
 }
 
 export function SignalTable({

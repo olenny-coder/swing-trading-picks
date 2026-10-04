@@ -229,13 +229,16 @@ class TestSmaStrategy(unittest.TestCase):
             drafts = _run(pcts)
             self.assertLessEqual(len(drafts), 1)
 
-    def test_sell_setup_is_flagged_for_options(self):
+    def test_sell_setup_reports_the_underlying_only(self):
+        """Picks carry no options data — a bearish setup is the stock's own levels."""
         drafts = _run(DC1_SERIES)
         self.assertTrue(drafts)
         d = drafts[0]
         self.assertEqual(d.event_flags.get("direction"), SIGNAL_SELL)
         self.assertEqual(d.event_flags.get("setup"), d.setup)
-
+        self.assertNotIn("options_liquid", d.event_flags)
+        self.assertGreater(d.entry, d.target)  # a short: target sits below entry
+        self.assertGreater(d.stop, d.entry)
 
     # -- volume and Average True Range confirmation -----------------------
     def test_volume_backing_adds_confidence(self):

@@ -25,7 +25,7 @@ from .finnhub_provider import FinnhubMacroProvider
 from .fred_provider import FredMacroProvider
 from .mock_provider import MockMacroProvider, MockMarketDataProvider
 from .polygon_provider import PolygonMarketDataProvider
-from .yahoo_provider import YahooMacroProvider
+from .yahoo_provider import YahooFuturesProvider, YahooMacroProvider
 
 
 class CompositeMacroProvider(MacroDataProvider):
@@ -127,3 +127,15 @@ def resolve_macro_provider(creds: dict) -> MacroDataProvider:
         providers.append(FinnhubMacroProvider(finnhub["api_key"]))
     providers.append(MockMacroProvider())
     return CompositeMacroProvider(providers)
+
+
+def resolve_futures_provider() -> MarketDataProvider | None:
+    """Source of daily bars for the index futures in ``core.universe.FUTURES``.
+
+    Equities come from Alpaca/Polygon, but neither carries index futures, so this
+    is a separate, key-free Yahoo source. Returns ``None`` when index futures are
+    switched off, in which case generation simply omits them.
+    """
+    if not get_settings().index_futures_enabled:
+        return None
+    return YahooFuturesProvider()

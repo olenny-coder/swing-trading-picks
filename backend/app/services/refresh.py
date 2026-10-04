@@ -88,6 +88,8 @@ def _do_refresh(db, user_id: int) -> dict:
     db.commit()
 
     n_bars = data_service.ingest_bars(db, market, tickers, start, today)
+    # Index futures (MES) come from a separate source and are best-effort.
+    futures_info = data_service.ingest_index_futures(db, start, today)
     data_service.ingest_macro_events(
         db, macro, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS)
     )
@@ -102,6 +104,7 @@ def _do_refresh(db, user_id: int) -> dict:
         "provider": market.name,
         "tickers": len(tickers),
         "bars": n_bars,
+        "futures": futures_info,
         "signal_date": str(data_service.latest_trading_day(db) or today),
         "signals": counts,
         "outcomes": outcomes,

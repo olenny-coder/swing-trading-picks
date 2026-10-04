@@ -10,28 +10,16 @@ credential service) and are never logged or serialized.
 """
 from __future__ import annotations
 
-import re
 from datetime import date, datetime
 
 import httpx
 
 from ..core.universe import UNIVERSE
-from .base import Bar, MarketDataProvider, OptionContract, ProviderError, Quote, UniverseMeta
+from .base import Bar, MarketDataProvider, ProviderError, Quote, UniverseMeta
 
 _PAPER_API = "https://paper-api.alpaca.markets"
 _LIVE_API = "https://api.alpaca.markets"
 _DATA_API = "https://data.alpaca.markets"
-
-_OCC_RE = re.compile(r"^(?P<root>[A-Z]{1,6})(?P<yy>\d{2})(?P<mm>\d{2})(?P<dd>\d{2})(?P<type>[CP])(?P<strike>\d{8})$")
-
-
-def _parse_occ_symbol(symbol: str) -> dict | None:
-    m = _OCC_RE.match(symbol)
-    if not m:
-        return None
-    strike = int(m.group("strike")) / 1000.0
-    expiry = date(2000 + int(m.group("yy")), int(m.group("mm")), int(m.group("dd")))
-    return {"strike": strike, "expiry": expiry, "type": "call" if m.group("type") == "C" else "put"}
 
 
 class AlpacaProvider(MarketDataProvider):
@@ -141,40 +129,3 @@ class AlpacaProvider(MarketDataProvider):
             data = self._get(_DATA_API, f"/v2/stocks/{ticker}/trades/latest", {"feed": self.data_feed})
             t = data.get("trade", {})
             return Quote(ticker=ticker, price=float(t.get("p") or 0.0))
-
-    # ------------------------------------------------------------------
-    def get_options_chain(self, ticker: str, side: str = "put") -> list[OptionContract]:
-        """Best-effort options chain via the Alpaca options (opra) feed.
-
-        Requires an options-data subscription; returns [] otherwise.
-        """
-        try:
-            data = self._get(
-                _DATA_API,
-                f"/v1beta1/options/snapshots/{ticker}",
-                {"feed": "opra", "limit": 250, "type": side},
-            )
-        except Exception:
-            return []
-        out: list[OptionContract] = []
-        for snap in data.get("snapshots", []):
-            symbol = snap.get("symbol", "")
-            parsed = _parse_occ_symbol(symbol)
-            if not parsed:
-                continue
-            quote = snap.get("latestQuote") or {}
-            trade = snap.get("latestTrade") or {}
-            out.append(
-                OptionContract(
-                    symbol=symbol,
-                    strike=parsed["strike"],
-                    type=parsed["type"],
-                    expiry=parsed["expiry"],
-                    bid=float(quote["bp"]) if quote.get("bp") else None,
-                    ask=float(quote["ap"]) if quote.get("ap") else None,
-                    last=float(trade["p"]) if trade.get("p") else None,
-                    open_interest=snap.get("openInterest"),
-                    implied_volatility=snap.get("impliedVolatility"),
-                )
-            )
-        return out

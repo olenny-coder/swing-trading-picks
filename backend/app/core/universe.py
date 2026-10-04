@@ -84,3 +84,28 @@ UNIVERSE: list[tuple[str, str, str]] = [
 UNIVERSE_TICKERS: list[str] = [t for t, _, _ in UNIVERSE]
 NAME_BY_TICKER: dict[str, str] = {t: n for t, n, _ in UNIVERSE}
 SECTOR_BY_TICKER: dict[str, str] = {t: s for t, _, s in UNIVERSE}
+
+# ---------------------------------------------------------------------------
+# Index futures
+# ---------------------------------------------------------------------------
+#: Index futures considered alongside the equity universe. **MES** is the Micro
+#: E-mini S&P 500 — one tenth the size of ES, which is what makes it usable for a
+#: swing-trading account. These are only included when their price history is
+#: actually available: index futures are not part of the Alpaca equity feed, so
+#: they are pulled from Yahoo's public chart API and quietly skipped when that
+#: source is unreachable.
+#:
+#: Note the session difference: futures trade nearly 24 hours, so a daily futures
+#: candle covers the whole Globex session rather than the NYSE cash session.
+FUTURES: list[tuple[str, str, str]] = [
+    ("MES", "Micro E-mini S&P 500 futures", "Index Futures"),
+]
+
+#: Yahoo symbol for each future's continuous front-month contract.
+YAHOO_SYMBOL_BY_FUTURE: dict[str, str] = {
+    "MES": "MES=F",
+}
+
+FUTURES_TICKERS: list[str] = [t for t, _, _ in FUTURES]
+FUTURES_NAME_BY_TICKER: dict[str, str] = {t: n for t, n, _ in FUTURES}
+FUTURES_SECTOR_BY_TICKER: dict[str, str] = {t: s for t, _, s in FUTURES}

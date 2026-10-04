@@ -354,45 +354,11 @@ function SignalDetail() {
 
       {data.demo && <DemoBanner />}
 
-      {s.type === "SELL" && s.option_recommendation && (
-        <Collapsible title="Put option recommendation" subtitle={s.option_recommendation.symbol}>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Level
-              label="Strike"
-              value={`P${formatPrice(s.option_recommendation.strike)}`}
-              color="text-slate-100"
-            />
-            <Level
-              label="Premium (entry)"
-              value={formatPrice(s.option_recommendation.option_entry)}
-              color="text-slate-100"
-            />
-            <Level
-              label="Option target"
-              value={formatPrice(s.option_recommendation.option_target)}
-              color="text-emerald-400"
-            />
-            <Level
-              label="Option stop"
-              value={formatPrice(s.option_recommendation.option_stop)}
-              color="text-red-400"
-            />
-          </div>
-          <p className="mt-3 text-xs text-slate-400">
-            Open interest {s.option_recommendation.open_interest ?? "—"} · Implied volatility{" "}
-            {s.option_recommendation.implied_volatility
-              ? `${(s.option_recommendation.implied_volatility * 100).toFixed(1)}%`
-              : "—"}
-          </p>
-        </Collapsible>
-      )}
-
-      {s.type === "SELL" && !s.option_recommendation && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-200">
-          No options chain was available for this ticker (an Alpaca options subscription or a
-          Polygon.io key is required), so only the underlying price levels are shown.
-        </div>
-      )}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-xs leading-relaxed text-slate-400">
+        Levels are quoted on the underlying itself. This app reads stock prices only — there is no
+        options leg, so a bearish setup is traded by selling the underlying (or, for an index future
+        such as MES, the contract).
+      </div>
 
       <Collapsible
         title="LLM research"

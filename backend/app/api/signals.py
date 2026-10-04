@@ -16,11 +16,9 @@ from ..core.constants import (
 )
 from ..database import get_db
 from ..models import DailyBar, EarningsEvent, MacroEvent, MacroSnapshot, Signal, User
-from ..providers.registry import resolve_market_provider
 from ..schemas import (
     AccuracyResponse,
     BarOut,
-    OptionContractOut,
     SignalDetailOut,
     SignalFilters,
     SignalListResponse,
@@ -28,7 +26,6 @@ from ..schemas import (
     SummaryResponse,
 )
 from ..services import demo_service, outcome_service
-from ..services.credentials import resolve_credentials
 from ..services.data_service import load_bars
 from ..core.timeframes import chart_window, normalise, resample
 from .deps import get_current_admin, get_optional_user
@@ -298,34 +295,9 @@ def signal_detail(
         last2 = bars[-2]
         doji_highlight = ta.is_doji(last2.open, last2.high, last2.low, last2.close)
 
-    option_chain: list[OptionContractOut] = []
-    if sig.type == SIGNAL_SELL:
-        # Public read: use the primary (admin) user's credentials, falling back
-        # to environment variables, so visitors still get the options chain.
-        primary = db.query(User).order_by(User.id.asc()).first()
-        creds = resolve_credentials(db, primary.id if primary else None)
-        try:
-            provider = resolve_market_provider(creds)
-            option_chain = [
-                OptionContractOut(
-                    symbol=c.symbol,
-                    strike=c.strike,
-                    expiry=c.expiry,
-                    bid=c.bid,
-                    ask=c.ask,
-                    last=c.last,
-                    open_interest=c.open_interest,
-                    implied_volatility=c.implied_volatility,
-                )
-                for c in provider.get_options_chain(sig.ticker, side="put")
-            ]
-        except Exception:
-            option_chain = []
-
     return SignalDetailOut(
         signal=SignalOut.model_validate(sig),
         bars=bar_outs,
         indicators=indicators,
         doji_highlight=doji_highlight,
-        option_chain=option_chain,
     )

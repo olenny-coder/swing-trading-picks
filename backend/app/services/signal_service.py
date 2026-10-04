@@ -2,8 +2,11 @@
 
 Loads bars from the DB, builds the macro/event context, runs the signal engine
 across the universe for each requested timeframe (daily, weekly, monthly),
-attaches put-option recommendations, and persists results. Runs are idempotent
-per (timeframe, candle date).
+replays recent candles so History has a record to score, and persists results.
+
+Picks are read from **stock prices alone** — no options layer — and index futures
+(MES) join the universe when their price history is available. Runs are
+idempotent per (timeframe, candle date).
 """
 from __future__ import annotations
 
@@ -25,9 +28,9 @@ from ..core.timeframes import (
 )
 from ..models import BacktestRun, Signal
 from ..providers.base import MacroDataProvider, MarketDataProvider
+from . import data_service
 from .data_service import latest_trading_day, load_bars, resolve_universe
 from .macro_service import build_and_store_snapshot, build_signal_context, days_to_earnings
-from .options_service import recommend_put
 
 #: How many earlier completed candles per timeframe are replayed so History has
 #: a record to show and score. Repeat runs skip dates already stored.
@@ -48,33 +51,21 @@ def load_backtest_win_rates(db: Session) -> dict[str, float]:
     return rates
 
 
-def _analyse(
-    meta, bars, timeframe: str, ctx, market_provider: MarketDataProvider
-) -> list[tuple[object, dict | None]]:
-    """Run the engine over one series and attach option ideas to short setups."""
-    out: list[tuple[object, dict | None]] = []
-    for draft in analyze_ticker(meta.ticker, meta.name, meta.sector, bars, ctx):
-        option_rec = None
-        if draft.direction == SIGNAL_SELL:
-            option_rec = recommend_put(
-                market_provider, draft.ticker, draft.price, draft.target, draft.stop
-            )
-            if option_rec is not None:
-                draft.event_flags["options_liquid"] = True
-            else:
-                # Keep the bearish setup even when no options chain is available
-                # (e.g. no options subscription); flag it so the UI can show the
-                # underlying levels without a contract.
-                draft.event_flags["options_data"] = "unavailable"
-        out.append((draft, option_rec))
-    return out
+def _analyse(meta, bars, timeframe: str, ctx) -> list:
+    """Run the engine over one series.
+
+    Picks are derived from **stock prices alone** — the engine reads OHLCV bars
+    and nothing else. There is no options layer: a bearish setup is reported as
+    the underlying's own entry, target and stop.
+    """
+    return list(analyze_ticker(meta.ticker, meta.name, meta.sector, bars, ctx))
 
 
 def _persist(db: Session, drafts, timeframe: str, candle_date: date) -> dict:
     """Store one candle's drafts, returning per-setup and per-direction counts."""
     counts = {s: 0 for s in SETUPS}
     counts.update({"BUY": 0, "SELL": 0, "total": 0})
-    for draft, option_rec in drafts:
+    for draft in drafts:
         db.add(
             Signal(
                 ticker=draft.ticker,
@@ -92,7 +83,6 @@ def _persist(db: Session, drafts, timeframe: str, candle_date: date) -> dict:
                 confidence_components=draft.confidence_components,
                 triggered_rules=draft.triggered_rules,
                 event_flags=draft.event_flags,
-                option_recommendation=option_rec,
             )
         )
         counts[draft.setup] = counts.get(draft.setup, 0) + 1
@@ -103,7 +93,6 @@ def _persist(db: Session, drafts, timeframe: str, candle_date: date) -> dict:
 
 def backfill_history(
     db: Session,
-    market_provider: MarketDataProvider,
     ctx,
     universe,
     timeframes: tuple[str, ...] = TIMEFRAMES,
@@ -149,23 +138,26 @@ def backfill_history(
         # Oldest first, and never the newest candle (that is the live list).
         candle_dates = [bar.date for bar in reference][-wanted - 1 : -1]
 
-        already = {
-            row[0]
-            for row in db.query(Signal.date)
+        # Skip per instrument, not per date: a symbol added later (an index
+        # future, or a new name in the universe) still fills in on dates that
+        # other tickers already cover.
+        already: set[tuple[str, date]] = {
+            (row[0], row[1])
+            for row in db.query(Signal.ticker, Signal.date)
             .filter(Signal.timeframe == timeframe, Signal.date.in_(candle_dates))
             .all()
         }
         total = 0
         for candle_date in candle_dates:
-            if candle_date in already:
-                continue
-            pending: list[tuple[object, dict | None]] = []
+            pending: list = []
             for meta in universe:
+                if (meta.ticker, candle_date) in already:
+                    continue
                 daily_bars = [b for b in load_bars(db, meta.ticker, start, anchor) if b.date <= candle_date]
                 series = resample(daily_bars, timeframe)
                 if len(series) < minimum:
                     continue
-                pending.extend(_analyse(meta, series, timeframe, ctx, market_provider))
+                pending.extend(_analyse(meta, series, timeframe, ctx))
             if not pending:
                 continue
             counts = _persist(db, pending, timeframe, candle_date)
@@ -202,7 +194,12 @@ def generate_signals(
     rates = load_backtest_win_rates(db)
     ctx = build_signal_context(db, anchor, rates, allow_earnings_plays)
 
-    universe = resolve_universe(market_provider, min_price=min_price, min_volume=min_volume)
+    universe = list(resolve_universe(market_provider, min_price=min_price, min_volume=min_volume))
+    # Index futures (MES) join only when their price history is present. The
+    # MOCK provider already lists them, so de-duplicate by ticker — a repeated
+    # ticker would collide with the (ticker, date, setup, timeframe) constraint.
+    known = {meta.ticker for meta in universe}
+    universe += [meta for meta in data_service.futures_universe(db) if meta.ticker not in known]
 
     counts = {s: 0 for s in SETUPS}
     counts.update({"BUY": 0, "SELL": 0, "total": 0})
@@ -220,7 +217,7 @@ def generate_signals(
         # DELETE must not race the new rows, and it is scoped to (timeframe,
         # date) so a weekly and a daily list sharing a date never clobber each
         # other.
-        pending: list[tuple[object, dict | None]] = []
+        pending: list = []
         stamp: date | None = None
         for meta in universe:
             daily_bars = load_bars(db, meta.ticker, start, anchor)
@@ -230,7 +227,7 @@ def generate_signals(
             candle_date = bars[-1].date
             stamp = stamp or candle_date
             ctx.earnings_in_days = days_to_earnings(db, meta.ticker, candle_date)
-            pending.extend(_analyse(meta, bars, timeframe, ctx, market_provider))
+            pending.extend(_analyse(meta, bars, timeframe, ctx))
 
         if stamp is not None:
             db.query(Signal).filter(
@@ -247,9 +244,7 @@ def generate_signals(
     # A run only covers the newest candle, so replay recent ones too — otherwise
     # History has nothing to show and nothing to score.
     if backfill:
-        counts["backfilled"] = backfill_history(
-            db, market_provider, ctx, universe, requested, anchor=anchor
-        )
+        counts["backfilled"] = backfill_history(db, ctx, universe, requested, anchor=anchor)
 
     counts["by_timeframe"] = by_timeframe
     return counts

@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 
 import httpx
 
-from .base import Bar, MarketDataProvider, OptionContract, Quote, UniverseMeta
+from .base import Bar, MarketDataProvider, Quote, UniverseMeta
 
 _BASE = "https://api.polygon.io"
 
@@ -82,27 +82,3 @@ class PolygonMarketDataProvider(MarketDataProvider):
         res = (data.get("results") or [{}])[0]
         price = float(res.get("c") or 0.0)
         return Quote(ticker=ticker, price=price, volume=float(res.get("v") or 0.0))
-
-    def get_options_chain(self, ticker: str, side: str = "put") -> list[OptionContract]:
-        try:
-            data = self._get(
-                "/v3/reference/options/contracts",
-                {"underlying_ticker": ticker, "contract_type": side, "expired": "false", "limit": 100},
-            )
-        except Exception:
-            return []
-        out: list[OptionContract] = []
-        for r in data.get("results", []):
-            try:
-                expiry = date.fromisoformat(r["expiration_date"])
-            except (ValueError, KeyError):
-                expiry = None
-            out.append(
-                OptionContract(
-                    symbol=r.get("ticker", ""),
-                    strike=float(r.get("strike_price") or 0),
-                    type=r.get("contract_type") or side,
-                    expiry=expiry,
-                )
-            )
-        return out

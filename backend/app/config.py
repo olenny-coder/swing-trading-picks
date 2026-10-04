@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Pause between per-signal calls; keeps a batch inside Groq's free TPM budget.
     llm_research_pause_seconds: float = 1.0
 
+    # Index futures (MES and friends). Their bars come from Yahoo rather than the
+    # equity provider, and are skipped entirely when unavailable.
+    index_futures_enabled: bool = True
+
     # Scheduler cron expressions (UTC).
     # 12:30 UTC = 8:30 PM Singapore time (SGT, UTC+8). Ingest first, then macro,
     # then signal generation on the most recent completed US trading day.
