@@ -21,7 +21,7 @@ from .base import (
     MarketDataProvider,
     ProviderError,
 )
-from .finnhub_provider import FinnhubMacroProvider
+from .finnhub_provider import FinnhubMacroProvider, FinnhubMarketCapProvider
 from .fred_provider import FredMacroProvider
 from .mock_provider import MockMacroProvider, MockMarketDataProvider
 from .polygon_provider import PolygonMarketDataProvider
@@ -139,3 +139,25 @@ def resolve_futures_provider() -> MarketDataProvider | None:
     if not get_settings().index_futures_enabled:
         return None
     return YahooFuturesProvider()
+
+
+def resolve_market_cap_provider(db=None):
+    """Optional market-capitalisation source for the FVG screener.
+
+    Prefers a stored Finnhub key, then the environment. Returns ``None`` when
+    unavailable, so callers can report the cap filter as *not applied* instead of
+    quietly ignoring it.
+    """
+    api_key = ""
+    if db is not None:
+        try:
+            from ..services.credentials import resolve_credentials
+
+            creds = resolve_credentials(db, None)
+            api_key = (creds.get("finnhub") or {}).get("api_key", "")
+        except Exception:
+            api_key = ""
+    api_key = api_key or get_settings().finnhub_api_key
+    if not api_key:
+        return None
+    return FinnhubMarketCapProvider(api_key)

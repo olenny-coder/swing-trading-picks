@@ -262,3 +262,133 @@ export interface TestConnectionResult {
   message: string;
   detail: Record<string, unknown> | null;
 }
+
+// ---------------------------------------------------------------------------
+// Fair Value Gap + breakout-structure screener
+// ---------------------------------------------------------------------------
+
+/** One drawing instruction for the drill-down chart. */
+export interface FvgAnnotation {
+  kind: "fvg" | "level" | "zone" | "box" | "trendline" | "marker";
+  label: string;
+  color?: string;
+  top?: number;
+  bottom?: number;
+  midpoint?: number;
+  price?: number;
+  from_date?: string;
+  to_date?: string;
+  date?: string;
+  position?: "aboveBar" | "belowBar" | "inBar";
+  shape?: "arrowUp" | "arrowDown" | "circle" | "square";
+  style?: string;
+  emphasis?: boolean;
+  timeframe?: string;
+  points?: { date: string; price: number }[];
+}
+
+export interface FvgSignalCard {
+  ticker: string;
+  timeframe: string;
+  signal: string;
+  direction: string | null;
+  setup_type: string;
+  confidence: number;
+  entry: number | null;
+  entry_zone: (number | null)[];
+  stop: number | null;
+  target1: number | null;
+  target2: number | null;
+  rr1: number | null;
+  rr2: number | null;
+  risk_per_share: number | null;
+  risk_per_trade_pct: number;
+  reasons: string[];
+  blockers: string[];
+  invalidation: string;
+  no_trade: boolean;
+  waiting: boolean;
+  disclaimer: string;
+}
+
+export interface FvgRow {
+  ticker: string;
+  name: string | null;
+  sector: string | null;
+  timeframe: string;
+  direction: string | null;
+  status: string;
+  setup_type: string;
+  breakout_level: number | null;
+  breakout_kind: string | null;
+  breakout_date: string | null;
+  fvg_top: number | null;
+  fvg_bottom: number | null;
+  fvg_midpoint: number | null;
+  fvg_date: string | null;
+  fvg_mitigation: number | null;
+  entry: number | null;
+  entry_low: number | null;
+  entry_high: number | null;
+  stop: number | null;
+  target1: number | null;
+  target2: number | null;
+  rr1: number | null;
+  rr2: number | null;
+  confidence: number;
+  price: number | null;
+  atr: number | null;
+  why: string;
+  reasons: string[];
+  blockers: string[];
+  invalidation: string;
+}
+
+export interface FvgSettings {
+  min_rr: number;
+  risk_per_trade_pct: number;
+  earnings_buffer_days: number;
+  min_price: number;
+  min_volume: number;
+  min_market_cap: number;
+  market_cap_applied: boolean;
+  market_cap_note: string | null;
+  allow_earnings_plays: boolean;
+}
+
+export interface FvgShortlist {
+  timeframe: string;
+  generated_at: string | null;
+  screened: number;
+  matched: number;
+  max_watchlist: number;
+  rows: FvgRow[];
+  settings: FvgSettings;
+  timeframes_available: string[];
+  intraday: { available: boolean; intervals?: string[]; note?: string };
+  method: string;
+  demo: boolean;
+}
+
+export interface FvgDrilldown {
+  ticker: string;
+  name: string | null;
+  sector: string | null;
+  timeframe: string;
+  as_of: string | null;
+  signal_card: FvgSignalCard;
+  annotations: FvgAnnotation[];
+  chart_markup: Record<string, unknown>;
+  structures: Record<string, unknown>[];
+  fvg_gaps: Record<string, unknown>[];
+  open_gap_count: number;
+  bars: BarOut[];
+  indicators: {
+    ema20: (number | null)[];
+    ema50: (number | null)[];
+    atr: (number | null)[];
+  };
+  timeframes_available: string[];
+  intraday: { available: boolean; intervals?: string[]; note?: string };
+  demo: boolean;
+}

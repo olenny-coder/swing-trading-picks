@@ -158,6 +158,20 @@ def futures_universe(db: Session) -> list[UniverseMeta]:
     return out
 
 
+def full_universe(
+    db: Session, provider: MarketDataProvider, min_price: float = 5.0, min_volume: float = 500_000.0
+) -> list[UniverseMeta]:
+    """The equity universe plus any index futures that have stored bars.
+
+    De-duplicated by ticker: the MOCK provider already lists the futures, and a
+    ticker appearing twice would collide with the signal uniqueness constraint.
+    """
+    universe = list(resolve_universe(provider, min_price=min_price, min_volume=min_volume))
+    known = {meta.ticker for meta in universe}
+    universe += [meta for meta in futures_universe(db) if meta.ticker not in known]
+    return universe
+
+
 def latest_trading_day(db: Session) -> date | None:
     """Most recent bar date in the database (handles weekends/holidays)."""
     return db.query(func.max(DailyBar.date)).scalar()

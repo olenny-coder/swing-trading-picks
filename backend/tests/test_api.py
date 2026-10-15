@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_tmp, 'test.db')}"
 os.environ["SECRET_KEY"] = "api-test-secret-key-that-is-longer-than-32-bytes-123456"
+os.environ["SEED_MODE"] = "sync"  # tests need the seed finished before the first request
 os.environ["DATA_PROVIDER"] = "mock"
 os.environ["ADMIN_USERNAME"] = "admin"
 os.environ["ADMIN_PASSWORD"] = "testpass"

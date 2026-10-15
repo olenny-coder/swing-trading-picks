@@ -11,6 +11,40 @@ _BASE = "https://finnhub.io/api/v1"
 
 _IMPACT = {"high": "high", "medium": "medium", "low": "low"}
 
+
+class FinnhubMarketCapProvider:
+    """Market capitalisation lookups, used only by the FVG screener's cap filter.
+
+    Finnhub reports ``marketCapitalization`` in millions of USD. The call is
+    optional: with no key the screener reports the filter as *not applied* rather
+    than silently pretending it ran.
+    """
+
+    name = "finnhub"
+
+    def __init__(self, api_key: str, timeout: float = 12.0) -> None:
+        self.api_key = api_key
+        self.timeout = timeout
+
+    def fetch(self, tickers: list[str]) -> dict[str, float]:
+        out: dict[str, float] = {}
+        with httpx.Client(timeout=self.timeout) as client:
+            for ticker in tickers:
+                try:
+                    resp = client.get(
+                        f"{_BASE}/stock/profile2",
+                        params={"symbol": ticker, "token": self.api_key},
+                    )
+                    resp.raise_for_status()
+                    payload = resp.json() or {}
+                except Exception:
+                    continue
+                millions = payload.get("marketCapitalization")
+                if isinstance(millions, (int, float)) and millions > 0:
+                    out[ticker.upper()] = float(millions) * 1_000_000.0
+        return out
+
+
 # Event categories where a LOWER reading is market-positive.
 _LOWER_IS_GOOD = (
     "inflation", "cpi", "ppi", "pce", "rate", "interest", "unemployment",

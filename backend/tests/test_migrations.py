@@ -158,5 +158,72 @@ class TestMigrations(unittest.TestCase):
         self.assertNotIn("SET is_admin = 0", code)
 
 
+class TestSignalsUpgrade(unittest.TestCase):
+    """The timeframe/outcome upgrade must preserve rows and never lose the table."""
+
+    def setUp(self):
+        self.engine = _legacy_db()
+        self._original = database.engine
+        database.engine = self.engine
+
+    def tearDown(self):
+        database.engine = self._original
+        self.engine.dispose()
+
+    def _columns(self) -> set[str]:
+        return {c["name"] for c in inspect(self.engine).get_columns("signals")}
+
+    def test_additive_column_map_covers_every_added_column(self):
+        self.assertEqual(
+            set(database._ADDITIVE_SIGNAL_COLUMNS),
+            {"timeframe", "outcome", "setup", "annotation"},
+        )
+
+    def test_sqlite_rebuild_produces_the_current_schema_and_keeps_rows(self):
+        database._migrate()
+        columns = self._columns()
+        for name in ("timeframe", "outcome", "setup", "annotation"):
+            self.assertIn(name, columns)
+        with self.engine.connect() as conn:
+            rows = conn.execute(text("SELECT ticker, timeframe, setup FROM signals")).fetchall()
+        self.assertEqual(len(rows), 1, "the existing pick must survive the upgrade")
+        self.assertEqual(rows[0][0], "AAPL")
+        self.assertEqual(rows[0][1], "DAILY", "pre-existing rows are stamped DAILY")
+        self.assertEqual(rows[0][2], "LEGACY")
+
+    def test_the_scratch_table_is_cleaned_up(self):
+        database._migrate()
+        self.assertNotIn("signals_backup", set(inspect(self.engine).get_table_names()))
+
+    def test_a_failed_additive_upgrade_falls_back_to_the_rebuild(self):
+        """PostgreSQL failing must not leave the app without a signals table."""
+        original = database._upgrade_signals_postgres
+
+        def boom(_columns):
+            raise RuntimeError("simulated PostgreSQL failure")
+
+        database._upgrade_signals_postgres = boom
+        # Pretend the dialect is PostgreSQL so the additive branch is attempted.
+        self.engine.dialect.name = "postgresql"
+        try:
+            database._migrate()
+        finally:
+            database._upgrade_signals_postgres = original
+            self.engine.dialect.name = "sqlite"
+
+        self.assertIn("timeframe", self._columns())
+        self.assertIn("outcome", self._columns())
+        with self.engine.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM signals")).scalar()
+        self.assertEqual(count, 1, "the fallback rebuild must still copy the row")
+
+    def test_upgrade_is_idempotent(self):
+        database._migrate()
+        database._migrate()
+        with self.engine.connect() as conn:
+            count = conn.execute(text("SELECT COUNT(*) FROM signals")).scalar()
+        self.assertEqual(count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -194,12 +194,9 @@ def generate_signals(
     rates = load_backtest_win_rates(db)
     ctx = build_signal_context(db, anchor, rates, allow_earnings_plays)
 
-    universe = list(resolve_universe(market_provider, min_price=min_price, min_volume=min_volume))
-    # Index futures (MES) join only when their price history is present. The
-    # MOCK provider already lists them, so de-duplicate by ticker — a repeated
-    # ticker would collide with the (ticker, date, setup, timeframe) constraint.
-    known = {meta.ticker for meta in universe}
-    universe += [meta for meta in data_service.futures_universe(db) if meta.ticker not in known]
+    universe = data_service.full_universe(
+        db, market_provider, min_price=min_price, min_volume=min_volume
+    )
 
     counts = {s: 0 for s in SETUPS}
     counts.update({"BUY": 0, "SELL": 0, "total": 0})

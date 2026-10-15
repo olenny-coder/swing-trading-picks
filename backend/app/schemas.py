@@ -231,6 +231,91 @@ class SignalDetailOut(BaseModel):
     demo: bool = False
 
 
+# ---------------------------------------------------------------------------
+# Fair Value Gap + breakout-structure screener
+# ---------------------------------------------------------------------------
+class FvgSettingsOut(BaseModel):
+    min_rr: float = 2.0
+    risk_per_trade_pct: float = 1.0
+    earnings_buffer_days: int = 7
+    min_price: float = 5.0
+    min_volume: float = 500_000.0
+    min_market_cap: float = 2_000_000_000.0
+    market_cap_applied: bool = False
+    market_cap_note: str | None = None
+    allow_earnings_plays: bool = False
+
+
+class FvgRowOut(BaseModel):
+    """One shortlist row — the columns the screener promises, then some."""
+
+    ticker: str
+    name: str | None = None
+    sector: str | None = None
+    timeframe: str = "DAILY"
+    direction: str | None = None
+    status: str = "NO_TRADE"
+    setup_type: str = ""
+    breakout_level: float | None = None
+    breakout_kind: str | None = None
+    breakout_date: str | None = None
+    fvg_top: float | None = None
+    fvg_bottom: float | None = None
+    fvg_midpoint: float | None = None
+    fvg_date: str | None = None
+    fvg_mitigation: float | None = None
+    entry: float | None = None
+    entry_low: float | None = None
+    entry_high: float | None = None
+    stop: float | None = None
+    target1: float | None = None
+    target2: float | None = None
+    rr1: float | None = None
+    rr2: float | None = None
+    confidence: float = 0.0
+    price: float | None = None
+    atr: float | None = None
+    why: str = ""
+    reasons: list[str] = []
+    blockers: list[str] = []
+    invalidation: str = ""
+
+
+class FvgShortlistOut(BaseModel):
+    timeframe: str = "DAILY"
+    generated_at: str | None = None
+    screened: int = 0
+    matched: int = 0
+    max_watchlist: int = 20
+    rows: list[FvgRowOut] = []
+    settings: FvgSettingsOut = FvgSettingsOut()
+    timeframes_available: list[str] = []
+    intraday: dict = {}
+    method: str = ""
+    demo: bool = False
+
+
+class FvgDrilldownOut(BaseModel):
+    """Chart annotations and the trade card, returned only for a chosen ticker."""
+
+    ticker: str
+    name: str | None = None
+    sector: str | None = None
+    timeframe: str = "DAILY"
+    as_of: str | None = None
+    signal_card: dict = {}
+    annotations: list[dict] = []
+    chart_markup: dict = {}
+    structures: list[dict] = []
+    fvg_gaps: list[dict] = []
+    open_gap_count: int = 0
+    bars: list[BarOut] = []
+    indicators: dict = {}
+    timeframes_available: list[str] = []
+    intraday: dict = {}
+    demo: bool = False
+
+
 class AccuracyResponse(BaseModel):
     """Retrospective hit rate: how often picks reached target rather than stop."""
 

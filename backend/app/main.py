@@ -9,6 +9,8 @@ the Render + Neon deployment runs without Vercel.
 """
 from __future__ import annotations
 
+import logging
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from .api import (
     auth,
     backtest,
+    fvg,
     macro,
     refresh,
     research,
@@ -30,23 +33,72 @@ from .api.auth import bootstrap_admin
 from .config import get_settings
 from .database import SessionLocal, init_db
 from .seed import seed_if_empty
+from .services import demo_service
 from .tasks.scheduler import start_scheduler, stop_scheduler
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("app.main")
 
 settings = get_settings()
 
 
+def _seed_in_background() -> None:
+    """Seed the MOCK demo dataset without blocking startup.
+
+    uvicorn binds its port only *after* this lifespan function returns, so a slow
+    startup is indistinguishable from a crash: both surface as Render's
+    "No open ports detected". Seeding is optional, so it runs on a background
+    thread and a failure is logged rather than fatal — a seeding problem must
+    never stop the service from serving.
+    """
+    try:
+        result = seed_if_empty()
+        logger.info("demo seed finished: %s", result)
+    except Exception:
+        logger.exception("demo seeding failed; the app keeps serving")
+
+
+def _warm_demo_cache() -> None:
+    """Build the synthetic DEMO dataset ahead of the first visitor.
+
+    The dataset is pure CPU work over generated series (expensive on a free
+    instance), and it would otherwise be built inside the first anonymous
+    request. Warming it here keeps that request fast.
+    """
+    try:
+        demo_service.dataset()
+        logger.info("demo dataset ready")
+    except Exception:
+        logger.exception("demo dataset warm-up failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Required, and fast: the schema and the bootstrap account.
     init_db()
     db = SessionLocal()
     try:
         bootstrap_admin(db)
     finally:
         db.close()
-    # Demo bootstrap (no-op when signals already exist / real keys configured).
-    seed_if_empty()
+
     if not settings.disable_scheduler:
         start_scheduler()
+
+    mode = (settings.seed_mode or "background").strip().lower()
+    if mode == "sync":
+        # Tests and local demos want the seeded data present before the first
+        # request. The demo cache is still warmed off-thread: it is only a
+        # latency optimisation, and warming it here would slow every test run.
+        _seed_in_background()
+    elif mode != "off":
+        threading.Thread(target=_seed_in_background, name="demo-seed", daemon=True).start()
+
+    threading.Thread(target=_warm_demo_cache, name="demo-warm", daemon=True).start()
+
     yield
     if not settings.disable_scheduler:
         stop_scheduler()
@@ -73,6 +125,7 @@ API_PREFIX = "/api"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(settings_router.router, prefix=API_PREFIX)
 app.include_router(signals.router, prefix=API_PREFIX)
+app.include_router(fvg.router, prefix=API_PREFIX)
 app.include_router(macro.router, prefix=API_PREFIX)
 app.include_router(backtest.router, prefix=API_PREFIX)
 app.include_router(refresh.router, prefix=API_PREFIX)

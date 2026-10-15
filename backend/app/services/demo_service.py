@@ -37,8 +37,10 @@ from ..core.timeframes import (
     normalise,
     resample,
 )
-from ..core.universe import UNIVERSE
+from ..core.fvg_strategy import closed_only
+from ..core.universe import FUTURES, UNIVERSE
 from ..providers.mock_provider import MockMacroProvider, MockMarketDataProvider
+from . import fvg_service
 from .macro_service import lagging_sectors, leading_sectors
 from .outcome_service import OPEN, STOP_HIT, TARGET_HIT, evaluate
 
@@ -120,7 +122,7 @@ def _build() -> dict:
     history: dict[str, list[dict]] = {tf: [] for tf in TIMEFRAMES}
     bars_by_ticker: dict[str, list] = {}
 
-    for ticker, name, sector in UNIVERSE:
+    for ticker, name, sector in list(UNIVERSE) + list(FUTURES):
         daily = market.get_daily_bars(ticker, start, today)
         if len(daily) < MIN_BARS:
             continue
@@ -432,11 +434,64 @@ def reset_cache() -> None:
         _cache = None
 
 
+# ---------------------------------------------------------------------------
+# FVG screener (demo parity)
+# ---------------------------------------------------------------------------
+def _fvg_entries(timeframe: str) -> list:
+    """The demo bars, prepared exactly like the live path prepares them."""
+    data = dataset()
+    out = []
+    for ticker, name, sector in list(UNIVERSE) + list(FUTURES):
+        daily = closed_only(data["bars_by_ticker"].get(ticker) or [])
+        if not daily:
+            continue
+        bars = resample(daily, timeframe)
+        if len(bars) < fvg_service.MIN_BARS:
+            continue
+        out.append(fvg_service.Instrument(ticker, name, sector, bars))
+    return out
+
+
+def fvg_shortlist_payload(timeframe: str | None = None, limit: int | None = None) -> dict:
+    """Step 1 for visitors who are not signed in: the synthetic shortlist."""
+    data = dataset()
+    resolved = normalise(timeframe)
+    return fvg_service.build_shortlist(
+        _fvg_entries(resolved),
+        resolved,
+        limit=limit,
+        generated_at=data["generated_at"],
+        screened=len(list(UNIVERSE)) + len(list(FUTURES)),
+        demo=True,
+    )
+
+
+def fvg_detail_payload(ticker: str, timeframe: str | None = None) -> dict | None:
+    """Step 2 for visitors who are not signed in: annotations for one ticker."""
+    data = dataset()
+    symbol = ticker.upper().strip()
+    daily = closed_only(data["bars_by_ticker"].get(symbol) or [])
+    if not daily:
+        return None
+    resolved = normalise(timeframe)
+    bars = resample(daily, resolved)
+    if len(bars) < 3:
+        return None
+    meta = next(
+        ((n, s) for t, n, s in list(UNIVERSE) + list(FUTURES) if t == symbol), (None, None)
+    )
+    return fvg_service.build_drilldown(
+        symbol, meta[0], meta[1], bars, resolved, demo=True
+    )
+
+
 __all__ = [
     "DEMO_ID_BASE",
     "accuracy_payload",
     "dataset",
     "detail_payload",
+    "fvg_detail_payload",
+    "fvg_shortlist_payload",
     "history_payload",
     "is_demo_signal_id",
     "macro_payload",

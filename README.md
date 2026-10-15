@@ -28,6 +28,7 @@ A production-ready swing-trading signal application for **US equities**. It scan
 - **API key management** — enter/update Alpaca (paper/live) and optional Finnhub/Polygon/FRED keys from the UI; keys are **encrypted at rest** (Fernet), **masked** in the UI, never sent to the browser, and fall back to environment variables.
 - **Responsive dashboard** — top-20 shortlist (with sector diversity), per-setup counters, filters (direction + setup), macro/earnings widgets, and interactive charts (TradingView Lightweight Charts) drawn on the pick's own interval.
 - **Index futures (MES)** — the Micro E-mini S&P 500 is considered alongside the equity universe when its price history is available. It is read with the same rules, and skipped silently when the futures source is unreachable.
+- **FVG Screener** — a second, two-step workflow built on **Fair Value Gaps** and confirmed **breakout structures**. Step 1 ranks a shortlist (ticker, direction, setup type, breakout level, FVG zone, entry zone, stop, two targets, reward-to-risk, confidence, rationale). Step 2 is the drill-down — annotated chart, signal card and markup — returned **only for the ticker you select**. See [FVG screener](#fvg-screener).
 - **Backtesting** — event-aware replay with win rate, avg return, max drawdown, profit factor, Sharpe, and walk-forward-capable CLI.
 - **Scheduling** — APScheduler daily jobs (ingestion, macro, signal generation), plus a GitHub Actions cron entrypoint.
 - **Public read / admin control** — the daily view, history, macro dashboard, and charts render **without logging in**, but anonymous visitors only ever receive a **synthetic DEMO dataset**; the real shortlist is served solely to the signed-in admin. Only the admin can refresh data or change API keys/settings.
@@ -274,6 +275,89 @@ Two things differ from equities and are worth knowing:
 
 Adding another contract is a one-line change in `backend/app/core/universe.py` (`FUTURES` plus its
 Yahoo symbol in `YAHOO_SYMBOL_BY_FUTURE`).
+
+---
+
+## FVG screener
+
+A second, independent workflow that reads the price action a discretionary trader would mark up:
+a **confirmed breakout structure** sets the direction, and the **Fair Value Gap** that leg left
+behind sets the entry.
+
+### Definitions
+
+| Term | Meaning |
+|---|---|
+| **Bullish Fair Value Gap** | The gap between the **high of candle 1** and the **low of candle 3**, where candle 2 is a strong bullish displacement candle |
+| **Bearish Fair Value Gap** | The gap between the **low of candle 1** and the **high of candle 3**, where candle 2 is a strong bearish displacement candle |
+| **Displacement candle** | Body ≥ 55% of its own range, range ≥ 1.0 × Average True Range, closing in the direction of travel |
+| **Mitigation** | How far later candles have traded back through a zone. Past 90% it is treated as consumed |
+| **Proximal edge** | The side price meets first when it retraces in — the top of a bullish gap, the bottom of a bearish one |
+
+Breakout structures recognised: **BOS** (break of structure), **CHoCH** (change of character),
+**range / consolidation breakout**, **flag or pennant breakout**, **trendline break**, and
+**supply / demand flip**.
+
+### Step 1 — the shortlist
+
+`GET /api/fvg/shortlist` screens the universe and returns **only** the ranked table:
+
+| Ticker | Direction | Setup type | Breakout level | FVG zone | Entry zone | Stop | Target 1 | Target 2 | R:R | Confidence | Why |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+
+Ranking is by status first — an actionable setup, then one **waiting** on a retrace, then the
+near-misses — and by confidence within each band. Only instruments with a structure **and** a
+matching gap are listed; a screener that lists everything it looked at is not a screener.
+
+The response carries **no annotations, no markup and no candles**. That is enforced by a test.
+
+### Step 2 — the drill-down
+
+`GET /api/fvg/{ticker}` returns the markup for **one** ticker, and the UI only calls it after the
+user picks a row:
+
+- **Chart annotations** — FVG bands (the one being traded is emphasised), the breakout level or
+  trendline, the consolidation box, the entry band, entry marker, stop and both targets.
+- **Signal card** — `BUY` / `SELL` / `WAIT` / `NO TRADE` with exact levels, risk per share, the
+  risk-per-trade setting, the reasons, the blockers and the invalidation condition.
+- **Chart markup** — the whole marking as portable JSON, so the same view can be redrawn or shared.
+
+Zones are painted on a canvas layered over the candles and repainted on every pan, zoom and resize;
+levels become price lines so they carry an axis label.
+
+### Rules the engine will not break
+
+- **No repainting.** A daily bar dated today is treated as still forming and dropped *before*
+  resampling, so weekly and monthly candles are built only from completed sessions. A zone can
+  never appear and then vanish.
+- **No forced signals.** If there is no confirmed breakout, no matching open gap, or the reward does
+  not clear `FVG_MIN_RR` (default **2.0**), the answer is `WAIT` or `NO TRADE` — with the levels and
+  the reason.
+- **Explicit levels and timeframes.** Every row states its interval; every level is a number.
+
+### Configuration
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `FVG_MAX_WATCHLIST` | 20 | Maximum shortlist size |
+| `FVG_MIN_RR` | 2.0 | Minimum reward-to-risk at target 1 |
+| `RISK_PER_TRADE_PCT` | 1.0 | Share of equity risked per trade |
+| `EARNINGS_BUFFER_DAYS` | 7 | Avoid instruments reporting inside this window |
+| `FVG_MIN_MARKET_CAP` | 2e9 | Floor, **applied only when a market-cap source exists** |
+| `MIN_PRICE` / `MIN_VOLUME` | 5.0 / 500k | Liquidity floors |
+| `FVG_TIMEFRAMES` | `DAILY` | Intervals the screener reads |
+| `ALLOW_EARNINGS_PLAYS` | false | Ignore the earnings buffer |
+
+Two limits worth stating plainly:
+
+- **Intraday is not enabled.** The brief asks for 4H structure and 1H/15m entry timing; that needs
+  an intraday bar feed, and this deployment ingests daily bars only. The API says so in every
+  response rather than implying otherwise.
+- **Market cap is not filtered unless you add a source.** Set a Finnhub key and the screener fetches
+  caps for the shortlisted names and applies the floor. Without one, the response reports the filter
+  as *not applied* instead of quietly skipping it.
+
+> Educational and analytical output only. It is not financial advice.
 
 ---
 

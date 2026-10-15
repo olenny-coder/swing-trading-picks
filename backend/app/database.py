@@ -6,10 +6,14 @@ SQLAlchemy models work against both.
 """
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import get_settings
+
+logger = logging.getLogger("app.database")
 
 settings = get_settings()
 
@@ -54,8 +58,10 @@ def init_db() -> None:
     """Create all tables. Imported models must be registered first."""
     from . import models  # noqa: F401  (ensure models are registered)
 
+    logger.info("initialising database (%s)", engine.dialect.name)
     Base.metadata.create_all(bind=engine)
     _migrate()
+    logger.info("database ready")
 
 
 def _migrate() -> None:
@@ -98,13 +104,10 @@ def _migrate() -> None:
     if "signals" in tables:
         cols = {c["name"] for c in insp.get_columns("signals")}
         if "timeframe" not in cols or "outcome" not in cols:
-            # The unique key now includes `timeframe`, and SQLite cannot drop a
-            # constraint in place — so the table is rebuilt. Existing rows are
-            # copied across and stamped DAILY, which preserves the pick history
-            # the accuracy view reads. `CREATE TABLE ... AS SELECT` deliberately
-            # avoids copying indexes/constraints, so the old index names are
-            # released for the new table on both SQLite and PostgreSQL.
-            _rebuild_signals_table(cols)
+            # The unique key now includes `timeframe`, so the table has to change
+            # shape. PostgreSQL does that additively; SQLite cannot drop a
+            # constraint in place and rebuilds instead.
+            _upgrade_signals_table(cols)
 
         # Re-reflect: the rebuild above replaced the table, and SQLAlchemy's
         # inspector caches its reflection.
@@ -115,10 +118,12 @@ def _migrate() -> None:
                 conn.execute(
                     text("ALTER TABLE signals ADD COLUMN setup VARCHAR(16) DEFAULT 'LEGACY'")
                 )
+            logger.info("added signals.setup")
         if "annotation" not in cols:
             # LLM research agent output (JSON: sentiment, risk flags, delta).
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE signals ADD COLUMN annotation JSON"))
+            logger.info("added signals.annotation")
         # Collapse legacy signal types onto the BUY/SELL direction model.
         with engine.begin() as conn:
             conn.execute(text("UPDATE signals SET type = 'SELL' WHERE type = 'PUT'"))
@@ -133,8 +138,114 @@ def _migrate() -> None:
             )
 
 
+#: Columns the timeframe/outcome release added, with the DDL to add each one.
+_ADDITIVE_SIGNAL_COLUMNS: dict[str, str] = {
+    "timeframe": "ALTER TABLE signals ADD COLUMN timeframe VARCHAR(8)",
+    "outcome": "ALTER TABLE signals ADD COLUMN outcome JSON",
+    "setup": "ALTER TABLE signals ADD COLUMN setup VARCHAR(16)",
+    "annotation": "ALTER TABLE signals ADD COLUMN annotation JSON",
+}
+
+_UNIQUE_KEY_NAME = "uq_signal_ticker_date_setup_timeframe"
+
+
+def _upgrade_signals_table(existing_columns: set[str]) -> None:
+    """Bring the ``signals`` table up to the current schema.
+
+    PostgreSQL gets a purely **additive** upgrade — ALTER columns, backfill, swap
+    the unique key — which moves no data and never drops the table. SQLite cannot
+    drop a constraint in place, so it rebuilds. If the PostgreSQL path fails for
+    any reason it rolls back and the rebuild is tried instead.
+    """
+    logger.info("upgrading the signals table for the timeframe/outcome schema")
+    if engine.dialect.name == "postgresql":
+        try:
+            _upgrade_signals_postgres(existing_columns)
+            logger.info("signals table upgraded additively")
+            return
+        except Exception:
+            logger.exception("additive signals upgrade failed; rebuilding the table instead")
+    _rebuild_signals_table(existing_columns)
+
+
+def _upgrade_signals_postgres(existing_columns: set[str]) -> None:
+    """Additive PostgreSQL upgrade: no table rebuild, no data movement."""
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        for name, ddl in _ADDITIVE_SIGNAL_COLUMNS.items():
+            if name not in existing_columns:
+                conn.execute(text(ddl))
+
+        conn.execute(
+            text("UPDATE signals SET timeframe = 'DAILY' WHERE timeframe IS NULL OR timeframe = ''")
+        )
+        conn.execute(
+            text("UPDATE signals SET setup = 'LEGACY' WHERE setup IS NULL OR setup = ''")
+        )
+        # Collapse legacy signal types onto the BUY/SELL direction model.
+        conn.execute(text("UPDATE signals SET type = 'SELL' WHERE type = 'PUT'"))
+        conn.execute(
+            text(
+                "UPDATE signals SET type = 'BUY' "
+                "WHERE type IN ('BUY_STANDARD', 'BUY_DOJI_REVERSAL')"
+            )
+        )
+
+        # Swap the unique key. The old one omitted `timeframe`, so the same setup
+        # could not exist on two intervals for one ticker.
+        names = [
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT c.conname FROM pg_constraint c "
+                    "JOIN pg_class t ON t.oid = c.conrelid "
+                    "WHERE t.relname = 'signals' AND c.contype = 'u'"
+                )
+            ).fetchall()
+        ]
+        for name in names:
+            if name != _UNIQUE_KEY_NAME:
+                conn.execute(text(f'ALTER TABLE signals DROP CONSTRAINT "{name}"'))
+        if _UNIQUE_KEY_NAME not in names:
+            conn.execute(
+                text(
+                    f"ALTER TABLE signals ADD CONSTRAINT {_UNIQUE_KEY_NAME} "
+                    "UNIQUE (ticker, date, setup, timeframe)"
+                )
+            )
+
+        conn.execute(text("ALTER TABLE signals ALTER COLUMN timeframe SET NOT NULL"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_signal_timeframe_date "
+                "ON signals (timeframe, date)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_signal_date_confidence "
+                "ON signals (date, confidence)"
+            )
+        )
+
+
 def _rebuild_signals_table(existing_columns: set[str]) -> None:
-    """Recreate ``signals`` with the current schema, copying existing rows."""
+    """Recreate ``signals`` with the current schema, copying existing rows.
+
+    The unique key now includes ``timeframe``, and SQLite cannot drop a
+    constraint in place, so the table has to be rebuilt. Existing rows are copied
+    across and stamped DAILY, which preserves the pick history the accuracy view
+    reads.
+
+    Everything happens on **one connection inside one transaction**. The old
+    table is set aside with ``CREATE TABLE ... AS SELECT`` (which deliberately
+    copies no indexes or constraints, releasing the old index names for the new
+    table), the replacement is created, populated, and only then is the copy
+    dropped. If any step fails the whole transaction rolls back, so the original
+    ``signals`` table is still there — a failed migration can never leave the
+    service without one.
+    """
     from sqlalchemy import text
 
     from .models import Signal
@@ -146,21 +257,22 @@ def _rebuild_signals_table(existing_columns: set[str]) -> None:
         for column in table.columns
         if column.name not in ("timeframe", "outcome") and column.name in existing_columns
     ]
-    collist = ", ".join(copy_columns)
+    # Quote identifiers: `open`/`high`/`index` style names are reserved words on
+    # some dialects.
+    collist = ", ".join(f'"{name}"' for name in copy_columns)
 
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE IF EXISTS signals_backup"))
         conn.execute(text("CREATE TABLE signals_backup AS SELECT * FROM signals"))
         conn.execute(text("DROP TABLE signals"))
-
-    table.create(bind=engine)
-
-    if copy_columns:
-        with engine.begin() as conn:
+        # Same connection, so the new table is visible to the statements below.
+        table.create(bind=conn)
+        if copy_columns:
             conn.execute(
                 text(
-                    f"INSERT INTO signals ({collist}, timeframe) "
+                    f'INSERT INTO signals ({collist}, timeframe) '
                     f"SELECT {collist}, 'DAILY' FROM signals_backup"
                 )
             )
-            conn.execute(text("DROP TABLE signals_backup"))
+        conn.execute(text("DROP TABLE signals_backup"))
+    logger.info("rebuilt the signals table for the timeframe/outcome schema")

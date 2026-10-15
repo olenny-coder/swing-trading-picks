@@ -76,14 +76,46 @@ Click any signal (or the *Chart* link) to open its detail page, which shows:
 - The **counter impact** — what macro events and media argue against the trade.
 - The **event context** (regime, VIX, earnings proximity, sector rotation).
 
-## 5. Macro dashboard
+## 5. FVG Screener
+
+A second, separate workflow, and it runs in **two deliberate steps**.
+
+**Step 1 — the shortlist.** The page screens the universe and returns a ranked
+table: ticker, direction, setup type, breakout level, FVG zone, entry zone, stop,
+two targets, reward-to-risk, confidence and the reason. Nothing is charted yet.
+
+The screen looks for a **confirmed breakout structure** (break of structure,
+change of character, range breakout, flag breakout, trendline break, or a
+supply/demand flip) and then for the **Fair Value Gap** that leg left behind. Only
+instrument with both are listed. A `WAIT` row means the setup is valid but price
+has not yet retraced into the gap; `NO TRADE` means a gate failed, and the reason
+is shown.
+
+**Step 2 — the drill-down.** Click any row. Only then does the app fetch and draw:
+
+- the annotated chart — Fair Value Gap bands, the breakout level or trendline, the
+  consolidation box, the entry band, entry marker, stop and both targets;
+- the **signal card** — `BUY` / `SELL` / `WAIT` / `NO TRADE` with exact levels,
+  risk per share, the reasons, the blockers and the invalidation condition;
+- the **chart markup** as portable JSON.
+
+Use **↻ Re-screen** to bypass the short-lived cache, and **Close drill-down** to
+return to the list.
+
+All candles are **closed** — a daily bar dated today is treated as still forming
+and excluded — so a zone never appears and then disappears. If nothing qualifies,
+the page says so rather than inventing a setup.
+
+> Educational and analytical output only. This is not financial advice.
+
+## 6. Macro dashboard
 
 The **Macro** page shows the market regime (SPY vs its 200-day moving average),
 VIX, the 10-year yield and Fed Funds rate, a **sector relative-strength
 heatmap**, the **economic calendar**, and the **upcoming earnings** list. These
 feed directly into signal selection and confidence.
 
-## 6. History
+## 7. History
 
 The **History** page lists all signals across dates with the same filters plus
 pagination.

@@ -8,6 +8,8 @@
 
 import type {
   AccuracyResponse,
+  FvgDrilldown,
+  FvgShortlist,
   MacroDashboard,
   ResearchStatus,
   SettingsResponse,
@@ -121,6 +123,23 @@ export const api = {
   },
 
   summary: () => request<Summary>("/api/signals/summary"),
+
+  // --- FVG + breakout screener ------------------------------------------
+  // Step 1: the shortlist. Step 2 is only called once a ticker is chosen, which
+  // is what keeps annotated charts off the screen until then.
+  fvgShortlist: (params: { timeframe?: string; limit?: number; refresh?: boolean } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<FvgShortlist>(`/api/fvg/shortlist${suffix}`);
+  },
+
+  fvgDrilldown: (ticker: string, timeframe?: string) =>
+    request<FvgDrilldown>(
+      `/api/fvg/${encodeURIComponent(ticker)}${timeframe ? `?timeframe=${timeframe}` : ""}`,
+    ),
 
   accuracy: (timeframe?: string) =>
     request<AccuracyResponse>(

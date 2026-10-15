@@ -66,6 +66,35 @@ class Settings(BaseSettings):
     # equity provider, and are skipped entirely when unavailable.
     index_futures_enabled: bool = True
 
+    # How the MOCK demo seed runs at startup: "background" (default) binds the
+    # port first and seeds on a thread, "sync" blocks startup, "off" never seeds.
+    # A hosted platform only detects the bound port once startup has returned, so
+    # blocking here is what makes a deploy look like it failed to open a port.
+    seed_mode: str = "background"
+
+    # ------------------------------------------------------------------
+    # Fair Value Gap + breakout-structure screener
+    # ------------------------------------------------------------------
+    #: Maximum shortlist size (the MAX_WATCHLIST input of the brief).
+    fvg_max_watchlist: int = 20
+    #: Minimum reward-to-risk at the first target for a setup to be tradeable.
+    fvg_min_rr: float = 2.0
+    #: Share of account equity risked per trade, used for position sizing.
+    risk_per_trade_pct: float = 1.0
+    #: Avoid instruments reporting earnings inside this many days.
+    earnings_buffer_days: int = 7
+    #: Liquidity floors, shared with the main signal engine.
+    min_price: float = 5.0
+    min_volume: float = 500_000.0
+    #: Allow setups that fall inside the earnings buffer.
+    allow_earnings_plays: bool = False
+    #: Minimum market capitalisation. Applied only when a market-cap source is
+    #: configured (Finnhub); otherwise it is reported as not applied.
+    fvg_min_market_cap: float = 2_000_000_000.0
+    #: Candle intervals the screener reads. Intraday intervals (4H/1H/15m) need an
+    #: intraday bar feed, which this deployment does not ingest yet.
+    fvg_timeframes: str = "DAILY"
+
     # Scheduler cron expressions (UTC).
     # 12:30 UTC = 8:30 PM Singapore time (SGT, UTC+8). Ingest first, then macro,
     # then signal generation on the most recent completed US trading day.

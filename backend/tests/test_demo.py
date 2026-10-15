@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_tmp, 'demo.db')}"
 os.environ["SECRET_KEY"] = "demo-test-secret-key-longer-than-32-bytes-1234"
+os.environ["SEED_MODE"] = "sync"  # tests need the seed finished before the first request
 os.environ["DATA_PROVIDER"] = "mock"
 os.environ["ADMIN_USERNAME"] = "admin"
 os.environ["ADMIN_PASSWORD"] = "testpass"
@@ -291,6 +292,137 @@ class TestDemoDataset(unittest.TestCase):
             self.assertIsNotNone(summary["win_rate_pct"])
             self.assertGreaterEqual(summary["win_rate_pct"], 0.0)
             self.assertLessEqual(summary["win_rate_pct"], 100.0)
+
+
+class TestFvgApi(unittest.TestCase):
+    """The two-step screener contract, over the anonymous DEMO dataset.
+
+    The critical rule: the shortlist must never carry chart annotations, because
+    the drill-down is only meant to appear once a ticker is chosen.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.client.__enter__()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.client.__exit__(None, None, None)
+
+    def test_guest_shortlist_is_demo_and_has_no_annotations(self):
+        resp = self.client.get("/api/fvg/shortlist")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        body = resp.json()
+        self.assertTrue(body["demo"])
+        self.assertIn("rows", body)
+        self.assertGreater(body["screened"], 0)
+        # Step 1 must not leak any drill-down markup. The words "Bullish FVG" do
+        # legitimately appear in the `why` explanation, so the check is structural.
+        self.assertNotIn("annotations", body)
+        self.assertNotIn("chart_markup", body)
+        self.assertNotIn("signal_card", body)
+        self.assertNotIn("bars", body)
+
+    def test_shortlist_rows_carry_every_promised_column(self):
+        body = self.client.get("/api/fvg/shortlist").json()
+        if not body["rows"]:
+            self.skipTest("the demo dataset produced no candidates")
+        for row in body["rows"]:
+            for column in (
+                "ticker",
+                "direction",
+                "status",
+                "setup_type",
+                "breakout_level",
+                "fvg_top",
+                "fvg_bottom",
+                "entry",
+                "stop",
+                "target1",
+                "target2",
+                "rr1",
+                "confidence",
+                "why",
+            ):
+                self.assertIn(column, row)
+            self.assertIn(row["status"], ("BUY", "SELL", "WAIT", "NO_TRADE"))
+
+    def test_shortlist_reports_the_configured_guardrails(self):
+        settings = self.client.get("/api/fvg/shortlist").json()["settings"]
+        for key in (
+            "min_rr",
+            "risk_per_trade_pct",
+            "earnings_buffer_days",
+            "min_price",
+            "min_volume",
+            "min_market_cap",
+            "market_cap_applied",
+        ):
+            self.assertIn(key, settings)
+        # No market-cap source is configured in tests, so it must say so.
+        self.assertFalse(settings["market_cap_applied"])
+        self.assertTrue(settings["market_cap_note"])
+
+    def test_shortlist_is_honest_about_intraday(self):
+        intraday = self.client.get("/api/fvg/shortlist").json()["intraday"]
+        self.assertFalse(intraday["available"])
+        self.assertIn("note", intraday)
+
+    def test_drilldown_returns_annotations_for_a_shortlisted_ticker(self):
+        body = self.client.get("/api/fvg/shortlist").json()
+        if not body["rows"]:
+            self.skipTest("the demo dataset produced no candidates")
+        ticker = body["rows"][0]["ticker"]
+
+        resp = self.client.get(f"/api/fvg/{ticker}")
+        self.assertEqual(resp.status_code, 200, resp.text)
+        detail = resp.json()
+        self.assertEqual(detail["ticker"], ticker)
+        self.assertTrue(detail["bars"], "the drill-down must include candles to draw")
+        self.assertTrue(detail["annotations"])
+
+        card = detail["signal_card"]
+        for key in ("signal", "entry", "stop", "target1", "target2", "rr1", "invalidation"):
+            self.assertIn(key, card)
+        self.assertIn("not financial advice", card["disclaimer"].lower())
+
+    def test_drilldown_geometry_is_coherent(self):
+        body = self.client.get("/api/fvg/shortlist").json()
+        if not body["rows"]:
+            self.skipTest("the demo dataset produced no candidates")
+        for row in body["rows"][:3]:
+            if row["direction"] not in ("BUY", "SELL"):
+                continue
+            detail = self.client.get(f"/api/fvg/{row['ticker']}").json()
+            card = detail["signal_card"]
+            if card["entry"] is None or card["stop"] is None:
+                continue
+            if row["direction"] == "BUY":
+                self.assertLess(card["stop"], card["entry"])
+                self.assertGreater(card["target1"], card["entry"])
+            else:
+                self.assertGreater(card["stop"], card["entry"])
+                self.assertLess(card["target1"], card["entry"])
+
+    def test_drilldown_rejects_an_unknown_ticker(self):
+        self.assertEqual(self.client.get("/api/fvg/NOTATICKER").status_code, 404)
+
+    def test_annotations_are_well_formed(self):
+        body = self.client.get("/api/fvg/shortlist").json()
+        if not body["rows"]:
+            self.skipTest("the demo dataset produced no candidates")
+        detail = self.client.get(f"/api/fvg/{body['rows'][0]['ticker']}").json()
+        dates = {b["date"] for b in detail["bars"]}
+        for mark in detail["annotations"]:
+            self.assertIn("kind", mark)
+            self.assertIn("label", mark)
+            if mark["kind"] in ("fvg", "zone", "box"):
+                self.assertLess(mark["bottom"], mark["top"])
+            if mark["kind"] == "level":
+                self.assertIsInstance(mark["price"], (int, float))
+            if mark["kind"] == "marker":
+                self.assertIn(mark["date"], dates)
 
 
 if __name__ == "__main__":

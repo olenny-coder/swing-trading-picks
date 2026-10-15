@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 
 const PUBLIC_LINKS = [
   { href: "/", label: "Daily View" },
+  { href: "/fvg", label: "FVG Screener" },
   { href: "/history", label: "History" },
   { href: "/macro", label: "Macro" },
 ];
