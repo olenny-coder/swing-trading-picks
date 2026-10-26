@@ -235,16 +235,19 @@ class MockMarketDataProvider(MarketDataProvider):
         return _generate_bars(ticker, start, end)
 
     def get_intraday_bars(
-        self, ticker: str, start: datetime, end: datetime, interval: str = "1Hour"
+        self, ticker: str, start: datetime, end: datetime, interval: str = "4Hour"
     ) -> list[IntradayBar]:
-        """Synthetic hourly candles that reconcile with the daily series.
+        """Synthetic intraday candles that reconcile with the daily series.
 
         The synthetic session runs 14:00-20:00 UTC in six hourly steps, and the
-        last hourly close equals the daily close, so the 4-hour refinement chart
-        agrees with the daily structure chart.
+        last hourly close equals the daily close, so the refinement chart agrees
+        with the daily structure chart. ``4Hour`` is aggregated from those hours,
+        exactly as a provider without a native 4-hour interval would.
         """
+        from ..core.intraday import resample_intraday
+
         daily = _generate_bars(ticker, start.date() - timedelta(days=6), end.date())
-        out: list[IntradayBar] = []
+        hourly: list[IntradayBar] = []
         for index, bar in enumerate(daily):
             if bar.date < start.date():
                 continue
@@ -255,7 +258,7 @@ class MockMarketDataProvider(MarketDataProvider):
                 o = prior_close + span * (hour / 6.0)
                 c = prior_close + span * ((hour + 1) / 6.0)
                 noise = max((bar.high - bar.low) * 0.12, 0.01)
-                out.append(
+                hourly.append(
                     IntradayBar(
                         ts=datetime.combine(bar.date, datetime.min.time())
                         + timedelta(hours=14 + hour),
@@ -266,7 +269,9 @@ class MockMarketDataProvider(MarketDataProvider):
                         volume=bar.volume / 6.0,
                     )
                 )
-        return out
+        if interval == "1Hour":
+            return hourly
+        return resample_intraday(hourly, drop_incomplete=False)
 
     def get_quote(self, ticker: str) -> Quote:
         end = date.today()

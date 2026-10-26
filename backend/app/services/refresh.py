@@ -94,13 +94,14 @@ def _do_refresh(db, user_id: int) -> dict:
     # Index futures (MES) come from a separate source and are best-effort.
     futures_info = data_service.ingest_index_futures(db, start, today)
 
-    # Hourly bars behind the 4-hour refinement chart. Without these the strategy
-    # can still read daily structure, but it will (correctly) refuse to trade
-    # because the entry, stop and reward cannot be validated.
+    # 4-hour candles behind the refinement chart — Alpaca serves that interval
+    # natively. Without them the strategy can still read daily structure, but it
+    # will (correctly) refuse to trade because the entry, stop and reward cannot be
+    # validated.
     intraday_start = datetime.combine(today - timedelta(days=INTRADAY_DAYS), dtime.min)
     intraday_end = datetime.combine(today, dtime.max)
-    n_intraday = data_service.ingest_intraday_bars(
-        db, market, tickers, intraday_start, intraday_end, interval="1Hour"
+    n_intraday = data_service.ingest_refinement_bars(
+        db, market, tickers, intraday_start, intraday_end
     )
 
     data_service.ingest_macro_events(

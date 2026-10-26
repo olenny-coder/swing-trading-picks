@@ -1,8 +1,8 @@
-"""SMC analysis service: scan the universe, and drill into one symbol.
+﻿"""SMC analysis service: scan the universe, and drill into one symbol.
 
 The app's whole job now: read the daily chart for structure, break of structure and
 the fair value gap behind it, then refine the entry on the 4-hour chart. The
-result is the plain-text block from ``SmcAnalysis.render`` — that text is the
+result is the plain-text block from ``SmcAnalysis.render`` â€” that text is the
 product, and the structured fields beside it exist only so the UI can draw the
 chart.
 
@@ -19,7 +19,7 @@ from datetime import date, datetime, time as dtime, timedelta
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..core.intraday import INTRADAY_INTERVAL, bars_to_chart, resample_intraday
+from ..core.intraday import bars_to_chart
 from ..core.smc import MIN_DAILY_BARS, SmcAnalysis, analyze
 from ..core.fvg import closed_only
 from ..core.timeframes import lookback_days
@@ -46,10 +46,11 @@ def _daily_bars(db: Session, ticker: str, anchor: date) -> list:
     return closed_only(data_service.load_bars(db, ticker, start, anchor))
 
 
-def _hourly_bars(db: Session, ticker: str, anchor: date) -> list:
+def _refinement_bars(db: Session, ticker: str, anchor: date) -> list:
+    """The 4-hour candles behind the refinement step."""
     start = datetime.combine(anchor - timedelta(days=INTRADAY_WINDOW_DAYS), dtime.min)
     end = datetime.combine(anchor, dtime.max)
-    return data_service.load_intraday_bars(db, ticker, start, end, INTRADAY_INTERVAL)
+    return data_service.load_refinement_bars(db, ticker, start, end)
 
 
 def _settings() -> tuple[float, int]:
@@ -82,7 +83,7 @@ def scan(
             daily = _daily_bars(db, meta.ticker, anchor)
             if len(daily) < MIN_DAILY_BARS:
                 continue
-            hourly = _hourly_bars(db, meta.ticker, anchor)
+            hourly = _refinement_bars(db, meta.ticker, anchor)
             results.append(analyze(meta.ticker, daily, hourly, min_risk_reward=min_rr))
         except Exception:  # pragma: no cover - defensive per instrument
             logger.debug("smc analysis failed for %s", meta.ticker, exc_info=True)
@@ -119,10 +120,9 @@ def drilldown(
     if len(daily) < 3:
         return None
 
-    hourly = _hourly_bars(db, symbol, anchor)
+    four_hour = _refinement_bars(db, symbol, anchor)
     min_rr, _ = _settings()
-    analysis = analyze(symbol, daily, hourly, min_risk_reward=min_rr)
-    four_hour = resample_intraday(hourly) if hourly else []
+    analysis = analyze(symbol, daily, four_hour, min_risk_reward=min_rr)
 
     meta = next(
         (m for m in data_service.full_universe(db, market_provider) if m.ticker == symbol),

@@ -112,20 +112,34 @@ class AlpacaProvider(MarketDataProvider):
         return bars
 
     def get_intraday_bars(
-        self, ticker: str, start: datetime, end: datetime, interval: str = "1Hour"
+        self, ticker: str, start: datetime, end: datetime, interval: str = "4Hour"
     ) -> list[IntradayBar]:
-        """Hourly candles for the 4-hour refinement chart.
+        """Candles at ``interval`` for the refinement chart.
 
-        Alpaca has no native 4-hour interval, so this fetches hourly bars and the
-        caller aggregates them. Returns nothing when the plan or feed has no
-        intraday history, which the strategy reports rather than working around.
+        Alpaca accepts an ``amount + unit`` timeframe, so ``4Hour`` is a
+        first-class interval — no need to aggregate hourly bars ourselves. If the
+        feed refuses it, hourly bars are fetched and aggregated so the strategy
+        still gets a 4-hour series.
         """
+        bars = self._intraday(ticker, start, end, interval)
+        if bars or interval == "1Hour":
+            return bars
+        hourly = self._intraday(ticker, start, end, "1Hour")
+        if interval == "4Hour" and hourly:
+            from ..core.intraday import resample_intraday
+
+            return resample_intraday(hourly)
+        return hourly
+
+    def _intraday(
+        self, ticker: str, start: datetime, end: datetime, interval: str
+    ) -> list[IntradayBar]:
         bars: list[IntradayBar] = []
         token: str | None = None
         # Alpaca caps a page at 10,000 bars; two pages covers a long window.
         for _ in range(2):
             params = {
-                "timeframe": "1Hour",
+                "timeframe": interval,
                 "start": start.isoformat(),
                 "end": end.isoformat(),
                 "limit": 10000,
@@ -134,7 +148,10 @@ class AlpacaProvider(MarketDataProvider):
             }
             if token:
                 params["page_token"] = token
-            data = self._get(_DATA_API, f"/v2/stocks/{ticker}/bars", params)
+            try:
+                data = self._get(_DATA_API, f"/v2/stocks/{ticker}/bars", params)
+            except Exception:
+                return bars
             for b in data.get("bars", []):
                 stamp = b["t"]
                 if stamp.endswith("Z"):

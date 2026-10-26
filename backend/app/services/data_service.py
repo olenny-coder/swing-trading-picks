@@ -203,6 +203,63 @@ def ingest_earnings(
     return count
 
 
+def ingest_refinement_bars(
+    db: Session, provider: MarketDataProvider, tickers: list[str], start: datetime, end: datetime
+) -> int:
+    """Fetch and store the 4-hour refinement candles.
+
+    The provider contract is that ``interval="4Hour"`` returns 4-hour candles —
+    native where the feed supports it, aggregated from hourly where it does not —
+    so everything lands in one place and the loader is trivial.
+    """
+    from ..core.intraday import REFINEMENT_INTERVAL
+    from ..models import IntradayBar as IntradayBarRow
+
+    total = 0
+    for ticker in tickers:
+        try:
+            bars = provider.get_intraday_bars(ticker, start, end, interval=REFINEMENT_INTERVAL)
+        except Exception:
+            continue
+        if not bars:
+            continue
+        db.query(IntradayBarRow).filter(
+            IntradayBarRow.ticker == ticker,
+            IntradayBarRow.interval == REFINEMENT_INTERVAL,
+            IntradayBarRow.ts >= start,
+            IntradayBarRow.ts <= end,
+        ).delete(synchronize_session=False)
+        db.add_all(
+            [
+                IntradayBarRow(
+                    ticker=ticker,
+                    interval=REFINEMENT_INTERVAL,
+                    ts=b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts,
+                    open=b.open,
+                    high=b.high,
+                    low=b.low,
+                    close=b.close,
+                    volume=b.volume,
+                )
+                for b in bars
+            ]
+        )
+        total += len(bars)
+        if total % 20000 < len(bars):
+            db.flush()
+    db.commit()
+    return total
+
+
+def load_refinement_bars(
+    db: Session, ticker: str, start: datetime, end: datetime
+) -> list[IntradayBar]:
+    """The 4-hour series for one symbol."""
+    from ..core.intraday import REFINEMENT_INTERVAL
+
+    return load_intraday_bars(db, ticker, start, end, REFINEMENT_INTERVAL)
+
+
 def resolve_universe(provider: MarketDataProvider, min_price: float = 5.0, min_volume: float = 500_000.0) -> list[UniverseMeta]:
     return provider.get_universe(min_price=min_price, min_volume=min_volume)
 

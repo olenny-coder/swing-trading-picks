@@ -6,11 +6,17 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
 [![Tests](https://img.shields.io/badge/tests-33%20passing-brightgreen.svg)](backend/tests)
 
-> **Topics:** `swing-trading` · `trading-signals` · `stock-screener` · `technical-analysis` · `sma` · `breakout` · `price-action` · `micro-e-mini` · `futures` · `alpaca` · `fastapi` · `nextjs` · `tailwindcss` · `lightweight-charts` · `backtesting` · `fintech` · `quant`
+> **Topics:** `swing-trading` · `trading-signals` · `stock-screener` · `technical-analysis` · `smart-money-concepts` · `fair-value-gap` · `break-of-structure` · `price-action` · `multi-timeframe` · `alpaca` · `fastapi` · `nextjs` · `tailwindcss` · `lightweight-charts` · `fintech` · `quant`
 
-A production-ready swing-trading signal application for **US equities**. It scans daily charts with the **SMA 20/50 flow system** for eight high-probability continuation and reversal setups (UC1, UC2, DC1, DC2, UR1, DR1, UR2, DR2), each with an entry price, target, stop-loss, and a 0–100 confidence rating. Signals are filtered by **macroeconomic developments** and the **earnings calendar**, and the whole app is **fully responsive** (desktop + mobile).
+A swing-trading **entry screener** for US equities.
 
-> **Zero-config demo:** the app ships with a deterministic *mock* data provider, so it runs end-to-end (dashboard, charts, settings, backtesting) with **no API keys**. Add your **Alpaca** credentials to switch to live/paper market data.
+The app's job is to answer one question: *where can I enter right now, and where does that trade stop and finish?* It scans the universe, reads the market structure on the **daily** chart, waits for a **break of structure** with a **Fair Value Gap** behind it, then refines the trigger on the **4-hour** chart. Every result is a concrete entry, stop and take-profit with a confidence score — or an explicit **No Trade** with the reason.
+
+It is a screener, not a chat: it ranks the universe and hands you the handful of names that are actually set up.
+
+> **Zero-config demo:** the app ships with a deterministic *mock* data provider, so it runs end-to-end (analysis, charts, settings) with **no API keys**. Add your **Alpaca** credentials to screen live data.
+>
+> **No scheduled downloads.** Nothing fetches prices on a timer. An administrator presses **↻ Refresh** when they want fresh data — that is the only thing that calls a provider.
 
 ---
 
@@ -305,8 +311,28 @@ Zoom into that daily gap on the 4-hour chart:
 | **Take profit** | The next liquidity pool: the nearest confirmed swing beyond the entry, on the 4H or 1D chart |
 | **Validation** | Only a trade at **1:1.6 risk-to-reward or better** |
 
-Four-hour candles are aggregated from hourly bars, bucketed on the UTC clock, because Alpaca has no
-native 4-hour interval.
+Four-hour candles come straight from Alpaca, which accepts an `amount + unit` timeframe and therefore
+serves **`4Hour` natively** — no hourly aggregation, and the buckets are the exchange's own. Providers
+without that interval return hourly bars and the app aggregates them, so the refinement chart always
+exists.
+
+### Does it actually find entries?
+
+Yes — the pipeline is a funnel, and this is what it looks like on a 115-name universe with a full
+4-hour history loaded:
+
+| Stage | Names |
+|---|---|
+| Universe | 115 |
+| Daily structure resolvable (not neutral) | 97 |
+| Break of structure confirmed | 96 |
+| Fair Value Gap inside the impulse leg | 49 |
+| **Passes 4-hour refinement at 1:1.6 or better** | **13** |
+
+That ratio is the point. The strategy is deliberately selective: **13 concrete entries out of 115
+names** is a usable shortlist, and the other 102 come back as `No Trade` with the exact reason. If a
+refresh has not pulled the 4-hour bars yet, every symbol correctly reports `No Trade — the 4-hour
+refinement chart is unavailable` rather than inventing levels.
 
 ### Output
 
@@ -339,11 +365,21 @@ still renders, with **Confidence Score: 0** and a Reasoning that opens with **No
 |---|---|---|
 | `SMC_MIN_RISK_REWARD` | 1.6 | The floor. Below it the answer is No Trade |
 | `SMC_MAX_RESULTS` | 20 | Maximum rows a scan returns |
-| `INTRADAY_DAYS` | 60 | Days of hourly bars behind the 4H chart |
+| `INTRADAY_DAYS` | 60 | Days of 4-hour candles behind the refinement chart |
 
 **No repainting.** A daily bar dated today is treated as still forming and dropped before anything
 else runs, so the 4H series is built only from completed sessions. A zone can never appear and then
 vanish.
+
+### Using it
+
+| Where | What it gives you |
+|---|---|
+| Home page (**SMC Analysis**) | The ranked scan: symbol, confidence, trend, BOS, gap zone, entry, stop, target, R:R |
+| Click any row | The plain-text verdict, the daily structure chart with the gap shaded and the levels marked, and every reason behind the call |
+| `GET /api/smc/scan` | The same scan as JSON, each result carrying its `text` block verbatim |
+| `GET /api/smc/{symbol}` | One symbol's verdict plus the daily and 4-hour candles behind it |
+| **↻ Refresh** (admin) | The only thing that pulls prices: daily bars, 4-hour refinement candles and the macro calendar |
 
 > Educational and analytical output only. It is not financial advice.
 
