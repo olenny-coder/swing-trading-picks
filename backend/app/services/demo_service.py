@@ -16,8 +16,9 @@ collide with real rows.
 from __future__ import annotations
 
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 
+from ..config import get_settings
 from ..core.base_types import SignalContext
 from ..core.constants import (
     CONTINUATION_SETUPS,
@@ -26,6 +27,7 @@ from ..core.constants import (
     SIGNAL_BUY,
     SIGNAL_SELL,
 )
+from ..core.fvg import closed_only
 from ..core.indicators import ema
 from ..core.sma_strategy import MIN_BARS, analyze_ticker
 from ..core.timeframes import (
@@ -37,10 +39,10 @@ from ..core.timeframes import (
     normalise,
     resample,
 )
-from ..core.fvg_strategy import closed_only
+from ..core.intraday import bars_to_chart, resample_intraday
+from ..core.smc import analyze as analyze_smc
 from ..core.universe import FUTURES, UNIVERSE
 from ..providers.mock_provider import MockMacroProvider, MockMarketDataProvider
-from . import fvg_service
 from .macro_service import lagging_sectors, leading_sectors
 from .outcome_service import OPEN, STOP_HIT, TARGET_HIT, evaluate
 
@@ -435,54 +437,93 @@ def reset_cache() -> None:
 
 
 # ---------------------------------------------------------------------------
-# FVG screener (demo parity)
+# SMC multi-timeframe analysis (demo parity)
 # ---------------------------------------------------------------------------
-def _fvg_entries(timeframe: str) -> list:
-    """The demo bars, prepared exactly like the live path prepares them."""
-    data = dataset()
-    out = []
+#: Days of synthetic hourly bars behind the 4-hour refinement.
+SMC_INTRADAY_DAYS = 40
+
+
+def _smc_hourly(ticker: str, today: date):
+    start = datetime.combine(today - timedelta(days=SMC_INTRADAY_DAYS), dtime.min)
+    end = datetime.combine(today, dtime.max)
+    return MockMarketDataProvider().get_intraday_bars(ticker, start, end)
+
+
+def _smc_results(data: dict) -> dict:
+    """Run the strategy once over the synthetic series and cache the verdicts."""
+    cached = data.get("smc")
+    if cached is not None:
+        return cached
+
+    today = data["generated_at"]
+    min_rr = get_settings().smc_min_risk_reward
+    out: dict[str, dict] = {}
     for ticker, name, sector in list(UNIVERSE) + list(FUTURES):
         daily = closed_only(data["bars_by_ticker"].get(ticker) or [])
-        if not daily:
+        if len(daily) < 60:
             continue
-        bars = resample(daily, timeframe)
-        if len(bars) < fvg_service.MIN_BARS:
-            continue
-        out.append(fvg_service.Instrument(ticker, name, sector, bars))
+        hourly = _smc_hourly(ticker, today)
+        analysis = analyze_smc(ticker, daily, hourly, min_risk_reward=min_rr)
+        payload = analysis.as_dict()
+        payload.update({"name": name, "sector": sector})
+        out[ticker] = payload
+    data["smc"] = out
     return out
 
 
-def fvg_shortlist_payload(timeframe: str | None = None, limit: int | None = None) -> dict:
-    """Step 1 for visitors who are not signed in: the synthetic shortlist."""
+def smc_scan_payload(limit: int | None = None) -> dict:
+    """The plain-text verdicts for visitors who are not signed in."""
     data = dataset()
-    resolved = normalise(timeframe)
-    return fvg_service.build_shortlist(
-        _fvg_entries(resolved),
-        resolved,
-        limit=limit,
-        generated_at=data["generated_at"],
-        screened=len(list(UNIVERSE)) + len(list(FUTURES)),
-        demo=True,
+    results = _smc_results(data)
+    ordered = sorted(
+        results.values(), key=lambda r: (r["tradeable"], r["confidence"]), reverse=True
     )
+    keep = limit or get_settings().smc_max_results
+    return {
+        "generated_at": data["generated_at"].isoformat(),
+        "scanned": len(results),
+        "analysed": len(results),
+        "tradeable": sum(1 for r in results.values() if r["tradeable"]),
+        "min_risk_reward": get_settings().smc_min_risk_reward,
+        "refinement_interval": "4H",
+        "intraday_available": True,
+        "results": ordered[:keep],
+        "demo": True,
+    }
 
 
-def fvg_detail_payload(ticker: str, timeframe: str | None = None) -> dict | None:
-    """Step 2 for visitors who are not signed in: annotations for one ticker."""
+def smc_symbol_payload(symbol: str) -> dict | None:
+    """One symbol's verdict plus its candles, for visitors who are not signed in."""
     data = dataset()
-    symbol = ticker.upper().strip()
+    results = _smc_results(data)
+    symbol = symbol.upper().strip()
+    payload = results.get(symbol)
+    if payload is None:
+        return None
+
+    hourly = _smc_hourly(symbol, data["generated_at"])
+    four_hour = resample_intraday(hourly) if hourly else []
     daily = closed_only(data["bars_by_ticker"].get(symbol) or [])
-    if not daily:
-        return None
-    resolved = normalise(timeframe)
-    bars = resample(daily, resolved)
-    if len(bars) < 3:
-        return None
-    meta = next(
-        ((n, s) for t, n, s in list(UNIVERSE) + list(FUTURES) if t == symbol), (None, None)
+
+    out = dict(payload)
+    out.update(
+        {
+            "daily_bars": [
+                {
+                    "date": b.date.isoformat(),
+                    "open": b.open,
+                    "high": b.high,
+                    "low": b.low,
+                    "close": b.close,
+                    "volume": b.volume,
+                }
+                for b in daily[-180:]
+            ],
+            "refinement_bars": bars_to_chart(four_hour[-200:]),
+            "demo": True,
+        }
     )
-    return fvg_service.build_drilldown(
-        symbol, meta[0], meta[1], bars, resolved, demo=True
-    )
+    return out
 
 
 __all__ = [
@@ -490,12 +531,12 @@ __all__ = [
     "accuracy_payload",
     "dataset",
     "detail_payload",
-    "fvg_detail_payload",
-    "fvg_shortlist_payload",
     "history_payload",
     "is_demo_signal_id",
     "macro_payload",
     "reset_cache",
     "signals_payload",
+    "smc_scan_payload",
+    "smc_symbol_payload",
     "summary_payload",
 ]

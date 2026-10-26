@@ -294,12 +294,26 @@ class TestDemoDataset(unittest.TestCase):
             self.assertLessEqual(summary["win_rate_pct"], 100.0)
 
 
-class TestFvgApi(unittest.TestCase):
-    """The two-step screener contract, over the anonymous DEMO dataset.
+class TestSmcApi(unittest.TestCase):
+    """The SMC endpoints, over the anonymous DEMO dataset.
 
-    The critical rule: the shortlist must never carry chart annotations, because
-    the drill-down is only meant to appear once a ticker is chosen.
+    Every result must carry the exact plain-text block, and the API must agree with
+    it: a row that is not tradeable has to say "No Trade" and score zero.
     """
+
+    LABELS = [
+        "Symbol: ",
+        "Confidence Score: ",
+        "Trend Direction: ",
+        "1D BOS Confirmed: ",
+        "1D FVG Zone: ",
+        "4H Refinement:",
+        "Entry Price: ",
+        "Stop Loss: ",
+        "Take Profit: ",
+        "Risk Reward Ratio: ",
+        "Reasoning: ",
+    ]
 
     @classmethod
     def setUpClass(cls):
@@ -310,119 +324,81 @@ class TestFvgApi(unittest.TestCase):
     def tearDownClass(cls):
         cls.client.__exit__(None, None, None)
 
-    def test_guest_shortlist_is_demo_and_has_no_annotations(self):
-        resp = self.client.get("/api/fvg/shortlist")
+    def _scan(self) -> dict:
+        resp = self.client.get("/api/smc/scan")
         self.assertEqual(resp.status_code, 200, resp.text)
-        body = resp.json()
+        return resp.json()
+
+    def test_scan_returns_demo_results(self):
+        body = self._scan()
         self.assertTrue(body["demo"])
-        self.assertIn("rows", body)
-        self.assertGreater(body["screened"], 0)
-        # Step 1 must not leak any drill-down markup. The words "Bullish FVG" do
-        # legitimately appear in the `why` explanation, so the check is structural.
-        self.assertNotIn("annotations", body)
-        self.assertNotIn("chart_markup", body)
-        self.assertNotIn("signal_card", body)
-        self.assertNotIn("bars", body)
+        self.assertGreater(body["scanned"], 0)
+        self.assertTrue(body["results"])
+        self.assertEqual(body["refinement_interval"], "4H")
+        self.assertAlmostEqual(body["min_risk_reward"], 1.6, places=2)
 
-    def test_shortlist_rows_carry_every_promised_column(self):
-        body = self.client.get("/api/fvg/shortlist").json()
-        if not body["rows"]:
-            self.skipTest("the demo dataset produced no candidates")
-        for row in body["rows"]:
-            for column in (
-                "ticker",
-                "direction",
-                "status",
-                "setup_type",
-                "breakout_level",
-                "fvg_top",
-                "fvg_bottom",
-                "entry",
-                "stop",
-                "target1",
-                "target2",
-                "rr1",
-                "confidence",
-                "why",
-            ):
-                self.assertIn(column, row)
-            self.assertIn(row["status"], ("BUY", "SELL", "WAIT", "NO_TRADE"))
+    def test_every_result_carries_the_exact_plain_text_block(self):
+        for row in self._scan()["results"]:
+            lines = row["text"].split("\n")
+            self.assertEqual(len(lines), 11, row["text"])
+            for line, label in zip(lines, self.LABELS):
+                self.assertTrue(line.startswith(label), f"{line!r} should start with {label!r}")
+            # Nothing outside the structure: no JSON, no markdown fences.
+            self.assertNotIn("{", row["text"])
+            self.assertNotIn("```", row["text"])
 
-    def test_shortlist_reports_the_configured_guardrails(self):
-        settings = self.client.get("/api/fvg/shortlist").json()["settings"]
-        for key in (
-            "min_rr",
-            "risk_per_trade_pct",
-            "earnings_buffer_days",
-            "min_price",
-            "min_volume",
-            "min_market_cap",
-            "market_cap_applied",
-        ):
-            self.assertIn(key, settings)
-        # No market-cap source is configured in tests, so it must say so.
-        self.assertFalse(settings["market_cap_applied"])
-        self.assertTrue(settings["market_cap_note"])
+    def test_the_text_agrees_with_the_structured_fields(self):
+        for row in self._scan()["results"]:
+            text = row["text"]
+            self.assertIn(f"Symbol: {row['symbol']}", text)
+            self.assertIn(f"Confidence Score: {row['confidence']:.0f}", text)
+            self.assertIn(f"Trend Direction: {row['trend']}", text)
+            self.assertIn(f"1D BOS Confirmed: {'Yes' if row['bos_confirmed'] else 'No'}", text)
 
-    def test_shortlist_is_honest_about_intraday(self):
-        intraday = self.client.get("/api/fvg/shortlist").json()["intraday"]
-        self.assertFalse(intraday["available"])
-        self.assertIn("note", intraday)
+            if row["tradeable"]:
+                self.assertGreater(row["confidence"], 0)
+                self.assertGreaterEqual(row["risk_reward"], 1.6 - 1e-9)
+                self.assertNotIn("Reasoning: No Trade", text)
+                self.assertIn(f"Entry Price: {row['entry']:.2f}", text)
+                self.assertIn(f"Stop Loss: {row['stop']:.2f}", text)
+                self.assertIn(f"Take Profit: {row['target']:.2f}", text)
+                self.assertIn(f"Risk Reward Ratio: 1:{row['risk_reward']:.2f}", text)
+            else:
+                # A refused setup always scores zero and says "No Trade". It may
+                # still report the levels it computed — a trade rejected only on
+                # reward is more useful shown than hidden.
+                self.assertEqual(row["confidence"], 0)
+                self.assertTrue(row["reasoning"].startswith("No Trade"))
+                if row["entry"] is None:
+                    self.assertIn("Entry Price: n/a", text)
+                else:
+                    self.assertIn(f"Entry Price: {row['entry']:.2f}", text)
 
-    def test_drilldown_returns_annotations_for_a_shortlisted_ticker(self):
-        body = self.client.get("/api/fvg/shortlist").json()
-        if not body["rows"]:
-            self.skipTest("the demo dataset produced no candidates")
-        ticker = body["rows"][0]["ticker"]
+    def test_tradeable_rows_come_first(self):
+        results = self._scan()["results"]
+        flags = [r["tradeable"] for r in results]
+        self.assertEqual(flags, sorted(flags, reverse=True), "tradeable setups rank first")
 
-        resp = self.client.get(f"/api/fvg/{ticker}")
+    def test_symbol_endpoint_returns_the_verdict_and_candles(self):
+        body = self._scan()
+        symbol = body["results"][0]["symbol"]
+
+        resp = self.client.get(f"/api/smc/{symbol}")
         self.assertEqual(resp.status_code, 200, resp.text)
         detail = resp.json()
-        self.assertEqual(detail["ticker"], ticker)
-        self.assertTrue(detail["bars"], "the drill-down must include candles to draw")
-        self.assertTrue(detail["annotations"])
+        self.assertEqual(detail["symbol"], symbol)
+        self.assertEqual(detail["text"].split("\n")[0], f"Symbol: {symbol}")
+        self.assertTrue(detail["daily_bars"], "the structure chart needs daily candles")
+        for bar in detail["daily_bars"][:3]:
+            self.assertLessEqual(bar["low"], bar["high"])
+        self.assertIn("refinement_bars", detail)
 
-        card = detail["signal_card"]
-        for key in ("signal", "entry", "stop", "target1", "target2", "rr1", "invalidation"):
-            self.assertIn(key, card)
-        self.assertIn("not financial advice", card["disclaimer"].lower())
+    def test_unknown_symbol_is_404(self):
+        self.assertEqual(self.client.get("/api/smc/NOTATICKER").status_code, 404)
 
-    def test_drilldown_geometry_is_coherent(self):
-        body = self.client.get("/api/fvg/shortlist").json()
-        if not body["rows"]:
-            self.skipTest("the demo dataset produced no candidates")
-        for row in body["rows"][:3]:
-            if row["direction"] not in ("BUY", "SELL"):
-                continue
-            detail = self.client.get(f"/api/fvg/{row['ticker']}").json()
-            card = detail["signal_card"]
-            if card["entry"] is None or card["stop"] is None:
-                continue
-            if row["direction"] == "BUY":
-                self.assertLess(card["stop"], card["entry"])
-                self.assertGreater(card["target1"], card["entry"])
-            else:
-                self.assertGreater(card["stop"], card["entry"])
-                self.assertLess(card["target1"], card["entry"])
-
-    def test_drilldown_rejects_an_unknown_ticker(self):
-        self.assertEqual(self.client.get("/api/fvg/NOTATICKER").status_code, 404)
-
-    def test_annotations_are_well_formed(self):
-        body = self.client.get("/api/fvg/shortlist").json()
-        if not body["rows"]:
-            self.skipTest("the demo dataset produced no candidates")
-        detail = self.client.get(f"/api/fvg/{body['rows'][0]['ticker']}").json()
-        dates = {b["date"] for b in detail["bars"]}
-        for mark in detail["annotations"]:
-            self.assertIn("kind", mark)
-            self.assertIn("label", mark)
-            if mark["kind"] in ("fvg", "zone", "box"):
-                self.assertLess(mark["bottom"], mark["top"])
-            if mark["kind"] == "level":
-                self.assertIsInstance(mark["price"], (int, float))
-            if mark["kind"] == "marker":
-                self.assertIn(mark["date"], dates)
+    def test_lowercase_symbol_is_accepted(self):
+        symbol = self._scan()["results"][0]["symbol"].lower()
+        self.assertEqual(self.client.get(f"/api/smc/{symbol}").status_code, 200)
 
 
 if __name__ == "__main__":

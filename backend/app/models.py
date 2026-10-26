@@ -114,6 +114,31 @@ class DailyBar(Base):
     volume: Mapped[float] = mapped_column(Float)
 
 
+class IntradayBar(Base):
+    """Intraday candles (default: 1 hour) behind the 4-hour refinement chart.
+
+    Stored separately from the daily bars because the strategy reads two clocks:
+    structure on the daily chart, entry refinement on the 4-hour chart built from
+    these.
+    """
+
+    __tablename__ = "intraday_bars"
+    __table_args__ = (
+        UniqueConstraint("ticker", "interval", "ts", name="uq_intraday_ticker_interval_ts"),
+        Index("ix_intraday_ticker_ts", "ticker", "ts"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticker: Mapped[str] = mapped_column(String(16), index=True)
+    interval: Mapped[str] = mapped_column(String(8), default="1Hour")
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    open: Mapped[float] = mapped_column(Float)
+    high: Mapped[float] = mapped_column(Float)
+    low: Mapped[float] = mapped_column(Float)
+    close: Mapped[float] = mapped_column(Float)
+    volume: Mapped[float] = mapped_column(Float)
+
+
 class Signal(Base):
     __tablename__ = "signals"
     __table_args__ = (

@@ -20,11 +20,18 @@ services:
       # postgresql+psycopg2://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require
       - key: DATABASE_URL
         sync: false
-      # Free instances sleep, so use the GitHub Actions cron instead.
+      # Nothing is scheduled: prices are pulled only when an admin presses Refresh.
       - key: DISABLE_SCHEDULER
         value: "true"
       - key: DATA_PROVIDER
         value: alpaca
+      # Strategy guardrails and the refinement window.
+      - key: SMC_MIN_RISK_REWARD
+        value: "1.6"
+      - key: SMC_MAX_RESULTS
+        value: "20"
+      - key: INTRADAY_DAYS
+        value: "60"
       - key: ALPACA_API_KEY
         sync: false
       - key: ALPACA_SECRET_KEY

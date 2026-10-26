@@ -27,6 +27,18 @@ class Bar:
 
 
 @dataclass
+class IntradayBar:
+    """An intraday candle stamped with its start time (UTC)."""
+
+    ts: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+@dataclass
 class Quote:
     ticker: str
     price: float
@@ -103,6 +115,17 @@ class MarketDataProvider(ABC):
     @abstractmethod
     def get_quote(self, ticker: str) -> Quote:
         ...
+
+    def get_intraday_bars(
+        self, ticker: str, start: datetime, end: datetime, interval: str = "1Hour"
+    ) -> list[IntradayBar]:
+        """Intraday candles, used to build the 4-hour refinement chart.
+
+        Optional: returns nothing when the provider or plan has no intraday data,
+        and the caller then reports that the 4H refinement could not run rather
+        than inventing an entry.
+        """
+        return []
 
 
 class MacroDataProvider(ABC):

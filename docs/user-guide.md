@@ -2,126 +2,107 @@
 
 ## 1. Getting started
 
-1. Launch the app (see the README Quickstart) and sign in with your credentials.
-2. The **Daily View** is the home screen. In demo mode it is pre-populated with
-   sample signals so you can explore immediately.
+1. Launch the app and sign in with your credentials.
+2. The home page is **SMC Analysis**. Visitors who are not signed in see a synthetic
+   demo dataset; the real analysis is served to a signed-in user.
 
 ## 2. Connecting your Alpaca account
 
-1. Open **Settings** from the top navigation.
+1. Open **Settings** from the navigation.
 2. Under **Alpaca (market data & trading)**:
    - Paste your **API Key** and **Secret Key**.
    - Keep **Paper trading** checked to use Alpaca's paper endpoint (safe).
    - Click **Save Alpaca keys**, then **Test connection**.
 3. A green "✓" confirms a valid connection. The stored key is shown only in
-   masked form (e.g. `AK************1234`) and can never be read back.
-4. To switch between paper and live, uncheck the box and save again.
+   masked form and can never be read back.
 
-You can also add optional providers (**Finnhub** for economic/earnings
-calendars, **FRED** for interest rates, **Polygon** for alternative data) the
-same way. Without them the app uses built-in simulated calendars so every
-feature still works.
+Optional providers — **Finnhub** (calendars), **FRED** (interest rates),
+**Polygon** (alternative bars) — are added the same way.
 
-## 3. Reading the Daily View
+## 3. Loading data — there is no scheduled download
 
-- **Summary cards** show total buys, total sells, continuation and reversal
-  counts, average confidence, the current market regime, VIX, and counts of
-  upcoming macro events and earnings risks.
-- The **interval selector** above the cards switches between **daily**, **weekly**
-  and **monthly** candles. These are the same rules read on a different candle
-  series, so each interval has its own list.
-- The **Top 20 / All** toggle switches between the diversity-capped shortlist
-  and the full signal list.
-- Use **Filters** to narrow by direction, setup, sector, confidence and price,
-  and to exclude earnings-week or macro-risk names.
+Nothing fetches prices on a timer: no cron job, no background download. Data is
+pulled **only when an administrator asks for it**.
 
-### Signal types
+1. Sign in as an admin.
+2. Press **↻ Refresh** on the SMC Analysis page (or `POST /api/refresh`).
+3. The refresh pulls daily bars for the universe, plus the hourly bars behind the
+   4-hour refinement chart, and records when it finished.
 
-| Badge | Meaning | When to use |
-|---|---|---|
-| `BUY` | Bullish setup | A trend resuming upward, or a completed downside reversal |
-| `SELL` | Bearish setup | A downtrend resuming downward, or a completed upside reversal |
+Until you refresh, the analysis runs on whatever is already stored. If a symbol
+has no stored candles it is skipped rather than guessed at.
 
-Levels are quoted on the **underlying itself**. The app reads stock prices only —
-there is no options leg, so a `SELL` is expressed by selling the instrument
-rather than by buying a put.
+## 4. SMC Analysis — reading the results
 
-Each signal also carries one of eight setups: `UC1`/`UC2` and `DC1`/`DC2` for
-continuation, `UR1`/`DR1` for early reversal, and `UR2`/`DR2` for double
-top/bottom reversals.
+The page ranks the universe and shows one row per symbol that reached a verdict.
+Each row carries the confidence score, the trend, whether a 1D break of structure
+was confirmed, the 1-day Fair Value Gap zone, the entry, stop and take profit, and
+the risk-to-reward.
 
-Index futures such as **MES** (Micro E-mini S&P 500) appear in the same list when
-their price history is available, marked with the *Index Futures* sector.
+| Column | Meaning |
+|---|---|
+| **Confidence** | 0–100. **0 means no trade**, always |
+| **Trend** | The daily swing structure: Bullish, Bearish, or Neutral |
+| **1D BOS** | Whether a definitive break of structure was confirmed |
+| **1D FVG zone** | The gap the impulse left behind, or `n/a` |
+| **Entry / Stop / Take profit** | The 4-hour refinement levels |
+| **R:R** | Risk-to-reward. A trade requires **1:1.6 or better** |
 
-### Columns
+A **No trade** label on a row is a real answer, not an error. The reason is always
+stated. Setups rejected only on reward still show their levels, so you can see how
+close they were.
 
-- **Entry** — the price level the setup triggers at, with the last close beneath
-  it for reference.
-- **Target / Stop** — profit target and stop-loss levels, projected from the
-  structural stop and the setup's risk-to-reward ratio.
-- **Confidence** — 0–100 with a Low/Medium/High label.
-- **Events** — `ERN nd` (earnings within *n* days) and `MACRO` (high-impact
-  event near) flags.
+### Step 1 — daily structure
 
-## 4. Signal detail & charts
+The engine reads the daily swing sequence, calls the trend, then looks for a close
+beyond a significant prior swing in that direction. That break is what makes the
+setup directional.
 
-Click any signal (or the *Chart* link) to open its detail page, which shows:
+### Step 2 — the gap, then the 4-hour refinement
 
-- Entry, target and stop, plus the **result** once the pick has resolved.
-- An interactive candlestick chart drawn on the **pick's own interval**, with
-  **EMA 20/50** overlays and a **doji highlight**.
-- The **triggered rules**, written out in full.
-- The **confidence breakdown** showing the continuation and reversal factor
-  scores, the blend weights, and every context adjustment.
-- The **counter impact** — what macro events and media argue against the trade.
-- The **event context** (regime, VIX, earnings proximity, sector rotation).
+The Fair Value Gap left by the impulse that broke structure is the only place a
+trade can start. **If there is no valid, unmitigated gap, confidence is 0 and the
+analysis stops.**
 
-## 5. FVG Screener
+The 4-hour chart then refines it:
 
-A second, separate workflow, and it runs in **two deliberate steps**.
+- **Entry** — the gap's 50% mean threshold.
+- **Stop** — beyond the swing that created the gap, so it sits at a structural
+  invalidation rather than the gap edge where a wick can reach it.
+- **Take profit** — the next liquidity pool: the nearest swing beyond the entry.
 
-**Step 1 — the shortlist.** The page screens the universe and returns a ranked
-table: ticker, direction, setup type, breakout level, FVG zone, entry zone, stop,
-two targets, reward-to-risk, confidence and the reason. Nothing is charted yet.
+## 5. Drill-down
 
-The screen looks for a **confirmed breakout structure** (break of structure,
-change of character, range breakout, flag breakout, trendline break, or a
-supply/demand flip) and then for the **Fair Value Gap** that leg left behind. Only
-instrument with both are listed. A `WAIT` row means the setup is valid but price
-has not yet retraced into the gap; `NO TRADE` means a gate failed, and the reason
-is shown.
+Click any row. The detail panel shows:
 
-**Step 2 — the drill-down.** Click any row. Only then does the app fetch and draw:
+- The **plain-text verdict** — the exact block with `Symbol`, `Confidence Score`,
+  `Trend Direction`, `1D BOS Confirmed`, `1D FVG Zone`, `4H Refinement`, `Entry
+  Price`, `Stop Loss`, `Take Profit`, `Risk Reward Ratio` and `Reasoning`.
+- The **daily structure chart**, with the gap shaded and the entry, stop and
+  target marked.
+- **What the analysis saw** — the break of structure, the gap and the R:R, plus
+  any blockers.
 
-- the annotated chart — Fair Value Gap bands, the breakout level or trendline, the
-  consolidation box, the entry band, entry marker, stop and both targets;
-- the **signal card** — `BUY` / `SELL` / `WAIT` / `NO TRADE` with exact levels,
-  risk per share, the reasons, the blockers and the invalidation condition;
-- the **chart markup** as portable JSON.
-
-Use **↻ Re-screen** to bypass the short-lived cache, and **Close drill-down** to
-return to the list.
-
-All candles are **closed** — a daily bar dated today is treated as still forming
-and excluded — so a zone never appears and then disappears. If nothing qualifies,
-the page says so rather than inventing a setup.
-
-> Educational and analytical output only. This is not financial advice.
+All candles are **closed**. A daily bar dated today is treated as still forming and
+excluded, so a zone never appears and then disappears.
 
 ## 6. Macro dashboard
 
 The **Macro** page shows the market regime (SPY vs its 200-day moving average),
-VIX, the 10-year yield and Fed Funds rate, a **sector relative-strength
-heatmap**, the **economic calendar**, and the **upcoming earnings** list. These
-feed directly into signal selection and confidence.
+VIX, the 10-year yield and Fed Funds rate, a sector relative-strength heatmap, the
+economic calendar and upcoming earnings.
 
 ## 7. History
 
-The **History** page lists all signals across dates with the same filters plus
-pagination.
+The **History** page lists previously stored signal rows with filters and
+pagination, and the accuracy summary shows how past picks resolved.
 
-## 7. Alerts (high-confidence signals)
+## 8. Administration
 
-High-confidence signals (≥ 71) that pass all filters are surfaced at the top of
-the Daily View. For external notifications, wire the `high_confidence_count`
-field of the summary into your alerting tool of choice.
+| Task | Where |
+|---|---|
+| Refresh data | **↻ Refresh** on SMC Analysis |
+| Alpaca / provider keys | **Settings** |
+| Add or disable users, grant admin | **Users** |
+
+> Educational and analytical output only. This is not financial advice.

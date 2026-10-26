@@ -19,6 +19,7 @@ from ..core.universe import FUTURES, UNIVERSE
 from .base import (
     Bar,
     EarningsData,
+    IntradayBar,
     MacroDataProvider,
     MacroEventData,
     MacroSnapshotData,
@@ -232,6 +233,40 @@ class MockMarketDataProvider(MarketDataProvider):
 
     def get_daily_bars(self, ticker: str, start: date, end: date) -> list[Bar]:
         return _generate_bars(ticker, start, end)
+
+    def get_intraday_bars(
+        self, ticker: str, start: datetime, end: datetime, interval: str = "1Hour"
+    ) -> list[IntradayBar]:
+        """Synthetic hourly candles that reconcile with the daily series.
+
+        The synthetic session runs 14:00-20:00 UTC in six hourly steps, and the
+        last hourly close equals the daily close, so the 4-hour refinement chart
+        agrees with the daily structure chart.
+        """
+        daily = _generate_bars(ticker, start.date() - timedelta(days=6), end.date())
+        out: list[IntradayBar] = []
+        for index, bar in enumerate(daily):
+            if bar.date < start.date():
+                continue
+            prior_close = daily[index - 1].close if index else bar.open
+            span = bar.close - prior_close
+            for hour in range(6):
+                rng = _rng(f"h::{ticker}::{bar.date.isoformat()}::{hour}")
+                o = prior_close + span * (hour / 6.0)
+                c = prior_close + span * ((hour + 1) / 6.0)
+                noise = max((bar.high - bar.low) * 0.12, 0.01)
+                out.append(
+                    IntradayBar(
+                        ts=datetime.combine(bar.date, datetime.min.time())
+                        + timedelta(hours=14 + hour),
+                        open=round(o, 4),
+                        high=round(max(o, c) + rng.uniform(0.0, noise), 4),
+                        low=round(min(o, c) - rng.uniform(0.0, noise), 4),
+                        close=round(c, 4),
+                        volume=bar.volume / 6.0,
+                    )
+                )
+        return out
 
     def get_quote(self, ticker: str) -> Quote:
         end = date.today()

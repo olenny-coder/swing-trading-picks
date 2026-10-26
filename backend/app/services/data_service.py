@@ -11,7 +11,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..models import DailyBar, EarningsEvent, MacroEvent
-from ..providers.base import Bar, MacroDataProvider, MarketDataProvider, UniverseMeta
+from ..providers.base import (
+    Bar,
+    IntradayBar,
+    MacroDataProvider,
+    MarketDataProvider,
+    UniverseMeta,
+)
 
 
 def ingest_bars(
@@ -60,6 +66,87 @@ def load_bars(db: Session, ticker: str, start: date, end: date) -> list[Bar]:
     )
     return [
         Bar(date=r.date, open=r.open, high=r.high, low=r.low, close=r.close, volume=r.volume)
+        for r in rows
+    ]
+
+
+def ingest_intraday_bars(
+    db: Session,
+    provider: MarketDataProvider,
+    tickers: list[str],
+    start: datetime,
+    end: datetime,
+    interval: str = "1Hour",
+) -> int:
+    """Fetch and store intraday candles. Returns the number of rows inserted.
+
+    Best-effort per instrument: a provider without intraday history simply
+    contributes nothing, and the strategy then says the 4-hour refinement could
+    not run rather than inventing an entry.
+    """
+    from ..models import IntradayBar as IntradayBarRow
+
+    total = 0
+    for ticker in tickers:
+        try:
+            bars = provider.get_intraday_bars(ticker, start, end, interval=interval)
+        except Exception:
+            continue
+        if not bars:
+            continue
+        db.query(IntradayBarRow).filter(
+            IntradayBarRow.ticker == ticker,
+            IntradayBarRow.interval == interval,
+            IntradayBarRow.ts >= start,
+            IntradayBarRow.ts <= end,
+        ).delete(synchronize_session=False)
+        db.add_all(
+            [
+                IntradayBarRow(
+                    ticker=ticker,
+                    interval=interval,
+                    ts=b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts,
+                    open=b.open,
+                    high=b.high,
+                    low=b.low,
+                    close=b.close,
+                    volume=b.volume,
+                )
+                for b in bars
+            ]
+        )
+        total += len(bars)
+        if total % 20000 < len(bars):
+            db.flush()
+    db.commit()
+    return total
+
+
+def load_intraday_bars(
+    db: Session, ticker: str, start: datetime, end: datetime, interval: str = "1Hour"
+) -> list[IntradayBar]:
+    from ..models import IntradayBar as IntradayBarRow
+
+    rows = (
+        db.query(IntradayBarRow)
+        .filter(
+            IntradayBarRow.ticker == ticker,
+            IntradayBarRow.interval == interval,
+            IntradayBarRow.ts >= start,
+            IntradayBarRow.ts <= end,
+        )
+        .order_by(IntradayBarRow.ts.asc())
+        .all()
+    )
+    return [
+        IntradayBar(
+            ts=r.ts.replace(tzinfo=None) if r.ts.tzinfo else r.ts,
+            open=r.open,
+            high=r.high,
+            low=r.low,
+            close=r.close,
+            volume=r.volume,
+        )
         for r in rows
     ]
 

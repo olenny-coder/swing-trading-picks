@@ -235,3 +235,18 @@ def nearest_open_gap(
 
 def price_in_gap(gap: FairValueGap, price: float) -> bool:
     return gap.bottom <= price <= gap.top
+
+
+def closed_only(bars: list, today: date | None = None) -> list:
+    """Drop a candle that cannot have closed yet.
+
+    A daily bar dated today is still forming, so including it would let a zone
+    appear and then disappear. Every timeframe is built from these bars, so
+    removing it here keeps the whole analysis honest.
+    """
+    if not bars:
+        return bars
+    today = today or date.today()
+    if bars[-1].date >= today:
+        return bars[:-1]
+    return bars

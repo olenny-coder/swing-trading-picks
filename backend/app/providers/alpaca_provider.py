@@ -15,7 +15,7 @@ from datetime import date, datetime
 import httpx
 
 from ..core.universe import UNIVERSE
-from .base import Bar, MarketDataProvider, ProviderError, Quote, UniverseMeta
+from .base import Bar, IntradayBar, MarketDataProvider, ProviderError, Quote, UniverseMeta
 
 _PAPER_API = "https://paper-api.alpaca.markets"
 _LIVE_API = "https://api.alpaca.markets"
@@ -109,6 +109,49 @@ class AlpacaProvider(MarketDataProvider):
                     volume=float(b["v"]),
                 )
             )
+        return bars
+
+    def get_intraday_bars(
+        self, ticker: str, start: datetime, end: datetime, interval: str = "1Hour"
+    ) -> list[IntradayBar]:
+        """Hourly candles for the 4-hour refinement chart.
+
+        Alpaca has no native 4-hour interval, so this fetches hourly bars and the
+        caller aggregates them. Returns nothing when the plan or feed has no
+        intraday history, which the strategy reports rather than working around.
+        """
+        bars: list[IntradayBar] = []
+        token: str | None = None
+        # Alpaca caps a page at 10,000 bars; two pages covers a long window.
+        for _ in range(2):
+            params = {
+                "timeframe": "1Hour",
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "limit": 10000,
+                "adjustment": "split",
+                "feed": self.data_feed,
+            }
+            if token:
+                params["page_token"] = token
+            data = self._get(_DATA_API, f"/v2/stocks/{ticker}/bars", params)
+            for b in data.get("bars", []):
+                stamp = b["t"]
+                if stamp.endswith("Z"):
+                    stamp = stamp[:-1]
+                bars.append(
+                    IntradayBar(
+                        ts=datetime.fromisoformat(stamp),
+                        open=float(b["o"]),
+                        high=float(b["h"]),
+                        low=float(b["l"]),
+                        close=float(b["c"]),
+                        volume=float(b["v"]),
+                    )
+                )
+            token = data.get("next_page_token")
+            if not token or len(data.get("bars", [])) < 10000:
+                break
         return bars
 
     def get_quote(self, ticker: str) -> Quote:

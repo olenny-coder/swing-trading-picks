@@ -8,8 +8,8 @@
 
 import type {
   AccuracyResponse,
-  FvgDrilldown,
-  FvgShortlist,
+  SmcScan,
+  SmcSymbol,
   MacroDashboard,
   ResearchStatus,
   SettingsResponse,
@@ -124,22 +124,20 @@ export const api = {
 
   summary: () => request<Summary>("/api/signals/summary"),
 
-  // --- FVG + breakout screener ------------------------------------------
-  // Step 1: the shortlist. Step 2 is only called once a ticker is chosen, which
-  // is what keeps annotated charts off the screen until then.
-  fvgShortlist: (params: { timeframe?: string; limit?: number; refresh?: boolean } = {}) => {
+  // --- SMC multi-timeframe analysis -------------------------------------
+  // The 1D structure / 4H refinement strategy. `text` on each result is the
+  // exact plain-text block from the brief.
+  smcScan: (params: { limit?: number; refresh?: boolean } = {}) => {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== "") qs.set(k, String(v));
+      if (v !== undefined && v !== null) qs.set(k, String(v));
     }
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return request<FvgShortlist>(`/api/fvg/shortlist${suffix}`);
+    return request<SmcScan>(`/api/smc/scan${suffix}`);
   },
 
-  fvgDrilldown: (ticker: string, timeframe?: string) =>
-    request<FvgDrilldown>(
-      `/api/fvg/${encodeURIComponent(ticker)}${timeframe ? `?timeframe=${timeframe}` : ""}`,
-    ),
+  smcSymbol: (symbol: string) =>
+    request<SmcSymbol>(`/api/smc/${encodeURIComponent(symbol)}`),
 
   accuracy: (timeframe?: string) =>
     request<AccuracyResponse>(

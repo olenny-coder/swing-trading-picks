@@ -263,18 +263,13 @@ export interface TestConnectionResult {
   detail: Record<string, unknown> | null;
 }
 
-// ---------------------------------------------------------------------------
-// Fair Value Gap + breakout-structure screener
-// ---------------------------------------------------------------------------
-
-/** One drawing instruction for the drill-down chart. */
-export interface FvgAnnotation {
+/** One drawing instruction for the structure chart. */
+export interface ChartAnnotation {
   kind: "fvg" | "level" | "zone" | "box" | "trendline" | "marker";
   label: string;
   color?: string;
   top?: number;
   bottom?: number;
-  midpoint?: number;
   price?: number;
   from_date?: string;
   to_date?: string;
@@ -283,112 +278,55 @@ export interface FvgAnnotation {
   shape?: "arrowUp" | "arrowDown" | "circle" | "square";
   style?: string;
   emphasis?: boolean;
-  timeframe?: string;
   points?: { date: string; price: number }[];
 }
 
-export interface FvgSignalCard {
-  ticker: string;
-  timeframe: string;
-  signal: string;
-  direction: string | null;
-  setup_type: string;
-  confidence: number;
-  entry: number | null;
-  entry_zone: (number | null)[];
-  stop: number | null;
-  target1: number | null;
-  target2: number | null;
-  rr1: number | null;
-  rr2: number | null;
-  risk_per_share: number | null;
-  risk_per_trade_pct: number;
-  reasons: string[];
-  blockers: string[];
-  invalidation: string;
-  no_trade: boolean;
-  waiting: boolean;
-  disclaimer: string;
-}
+// ---------------------------------------------------------------------------
+// SMC multi-timeframe analysis (1D structure, 4H refinement)
+// ---------------------------------------------------------------------------
 
-export interface FvgRow {
-  ticker: string;
-  name: string | null;
-  sector: string | null;
-  timeframe: string;
-  direction: string | null;
-  status: string;
-  setup_type: string;
-  breakout_level: number | null;
-  breakout_kind: string | null;
-  breakout_date: string | null;
-  fvg_top: number | null;
-  fvg_bottom: number | null;
-  fvg_midpoint: number | null;
-  fvg_date: string | null;
-  fvg_mitigation: number | null;
-  entry: number | null;
-  entry_low: number | null;
-  entry_high: number | null;
-  stop: number | null;
-  target1: number | null;
-  target2: number | null;
-  rr1: number | null;
-  rr2: number | null;
+export interface SmcResult {
+  symbol: string;
+  /** The plain-text block from the brief. This is the deliverable. */
+  text: string;
   confidence: number;
+  trend: "Bullish" | "Bearish" | "Neutral";
+  bos_confirmed: boolean;
+  fvg_low: number | null;
+  fvg_high: number | null;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  risk_reward: number | null;
+  reasoning: string;
+  tradeable: boolean;
+  triggered: boolean;
+  four_hour_available: boolean;
   price: number | null;
-  atr: number | null;
-  why: string;
-  reasons: string[];
+  as_of: string | null;
+  bos: Record<string, unknown> | null;
+  gap: Record<string, unknown> | null;
   blockers: string[];
-  invalidation: string;
+  reasons: string[];
 }
 
-export interface FvgSettings {
-  min_rr: number;
-  risk_per_trade_pct: number;
-  earnings_buffer_days: number;
-  min_price: number;
-  min_volume: number;
-  min_market_cap: number;
-  market_cap_applied: boolean;
-  market_cap_note: string | null;
-  allow_earnings_plays: boolean;
-}
-
-export interface FvgShortlist {
-  timeframe: string;
+export interface SmcScan {
   generated_at: string | null;
-  screened: number;
-  matched: number;
-  max_watchlist: number;
-  rows: FvgRow[];
-  settings: FvgSettings;
-  timeframes_available: string[];
-  intraday: { available: boolean; intervals?: string[]; note?: string };
-  method: string;
+  scanned: number;
+  analysed: number;
+  tradeable: number;
+  min_risk_reward: number;
+  refinement_interval: string;
+  intraday_available: boolean;
+  results: SmcResult[];
   demo: boolean;
 }
 
-export interface FvgDrilldown {
-  ticker: string;
+export interface SmcSymbol extends SmcResult {
   name: string | null;
   sector: string | null;
   timeframe: string;
-  as_of: string | null;
-  signal_card: FvgSignalCard;
-  annotations: FvgAnnotation[];
-  chart_markup: Record<string, unknown>;
-  structures: Record<string, unknown>[];
-  fvg_gaps: Record<string, unknown>[];
-  open_gap_count: number;
-  bars: BarOut[];
-  indicators: {
-    ema20: (number | null)[];
-    ema50: (number | null)[];
-    atr: (number | null)[];
-  };
-  timeframes_available: string[];
-  intraday: { available: boolean; intervals?: string[]; note?: string };
+  daily_bars: BarOut[];
+  refinement_bars: { time: string; open: number; high: number; low: number; close: number; volume: number }[];
   demo: boolean;
 }

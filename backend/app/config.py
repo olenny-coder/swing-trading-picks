@@ -95,6 +95,16 @@ class Settings(BaseSettings):
     #: intraday bar feed, which this deployment does not ingest yet.
     fvg_timeframes: str = "DAILY"
 
+    # ------------------------------------------------------------------
+    # SMC multi-timeframe analysis (the app's strategy)
+    # ------------------------------------------------------------------
+    #: Minimum risk-to-reward. Below this the answer is "No Trade".
+    smc_min_risk_reward: float = 1.6
+    #: Maximum rows returned by a scan.
+    smc_max_results: int = 20
+    #: Days of hourly bars pulled for the 4-hour refinement chart.
+    intraday_days: int = 60
+
     # Scheduler cron expressions (UTC).
     # 12:30 UTC = 8:30 PM Singapore time (SGT, UTC+8). Ingest first, then macro,
     # then signal generation on the most recent completed US trading day.

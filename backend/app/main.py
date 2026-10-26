@@ -21,12 +21,12 @@ from fastapi.staticfiles import StaticFiles
 from .api import (
     auth,
     backtest,
-    fvg,
     macro,
     refresh,
     research,
     settings as settings_router,
     signals,
+    smc,
     users,
 )
 from .api.auth import bootstrap_admin
@@ -34,7 +34,6 @@ from .config import get_settings
 from .database import SessionLocal, init_db
 from .seed import seed_if_empty
 from .services import demo_service
-from .tasks.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,12 +63,13 @@ def _seed_in_background() -> None:
 def _warm_demo_cache() -> None:
     """Build the synthetic DEMO dataset ahead of the first visitor.
 
-    The dataset is pure CPU work over generated series (expensive on a free
-    instance), and it would otherwise be built inside the first anonymous
-    request. Warming it here keeps that request fast.
+    The dataset and the SMC scan over it are pure CPU work over generated series
+    (expensive on a free instance), and they would otherwise be built inside the
+    first anonymous request. Warming them here keeps that request fast.
     """
     try:
         demo_service.dataset()
+        demo_service.smc_scan_payload()
         logger.info("demo dataset ready")
     except Exception:
         logger.exception("demo dataset warm-up failed")
@@ -85,8 +85,8 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    if not settings.disable_scheduler:
-        start_scheduler()
+    # No scheduled downloads: the admin pulls fresh data on demand with the
+    # Refresh button. Nothing here reaches out to a provider on a timer.
 
     mode = (settings.seed_mode or "background").strip().lower()
     if mode == "sync":
@@ -100,16 +100,16 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=_warm_demo_cache, name="demo-warm", daemon=True).start()
 
     yield
-    if not settings.disable_scheduler:
-        stop_scheduler()
 
 
 app = FastAPI(
     title=settings.app_name,
-    version="1.0.0",
-    description="Swing trading setups (UC1, UC2, DC1, DC2, UR1, DR1, UR2, DR2) "
-    "from the SMA 20/50 flow system for liquid US equities, with macro/earnings "
-    "filtering and API-key management.",
+    version="2.0.0",
+    description=(
+        "Smart Money Concepts multi-timeframe analysis: daily market structure, break of "
+        "structure and the fair value gap behind it, refined on the 4-hour chart for the "
+        "entry, stop and target. Data is refreshed by the administrator on demand."
+    ),
     lifespan=lifespan,
 )
 
@@ -125,7 +125,7 @@ API_PREFIX = "/api"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(settings_router.router, prefix=API_PREFIX)
 app.include_router(signals.router, prefix=API_PREFIX)
-app.include_router(fvg.router, prefix=API_PREFIX)
+app.include_router(smc.router, prefix=API_PREFIX)
 app.include_router(macro.router, prefix=API_PREFIX)
 app.include_router(backtest.router, prefix=API_PREFIX)
 app.include_router(refresh.router, prefix=API_PREFIX)

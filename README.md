@@ -28,9 +28,9 @@ A production-ready swing-trading signal application for **US equities**. It scan
 - **API key management** — enter/update Alpaca (paper/live) and optional Finnhub/Polygon/FRED keys from the UI; keys are **encrypted at rest** (Fernet), **masked** in the UI, never sent to the browser, and fall back to environment variables.
 - **Responsive dashboard** — top-20 shortlist (with sector diversity), per-setup counters, filters (direction + setup), macro/earnings widgets, and interactive charts (TradingView Lightweight Charts) drawn on the pick's own interval.
 - **Index futures (MES)** — the Micro E-mini S&P 500 is considered alongside the equity universe when its price history is available. It is read with the same rules, and skipped silently when the futures source is unreachable.
-- **FVG Screener** — a second, two-step workflow built on **Fair Value Gaps** and confirmed **breakout structures**. Step 1 ranks a shortlist (ticker, direction, setup type, breakout level, FVG zone, entry zone, stop, two targets, reward-to-risk, confidence, rationale). Step 2 is the drill-down — annotated chart, signal card and markup — returned **only for the ticker you select**. See [FVG screener](#fvg-screener).
+- **SMC multi-timeframe strategy** — daily market structure, a break of structure, and the **fair value gap** left by the impulse that broke it, refined on the **4-hour** chart for the entry, stop and target. The verdict is a fixed plain-text block. See [Strategy — SMC multi-timeframe analysis](#strategy--smc-multi-timeframe-analysis).
 - **Backtesting** — event-aware replay with win rate, avg return, max drawdown, profit factor, Sharpe, and walk-forward-capable CLI.
-- **Scheduling** — APScheduler daily jobs (ingestion, macro, signal generation), plus a GitHub Actions cron entrypoint.
+- **On-demand data only** — there is no scheduled download. No cron job and no timer touches a provider; the administrator pulls fresh prices with the **Refresh** button when they want them.
 - **Public read / admin control** — the daily view, history, macro dashboard, and charts render **without logging in**, but anonymous visitors only ever receive a **synthetic DEMO dataset**; the real shortlist is served solely to the signed-in admin. Only the admin can refresh data or change API keys/settings.
 - **LLM research agent (optional, Groq free tier)** — annotates existing signals with a news-style `sentiment`, up to four whitelisted `risk_flags`, and a **bounded confidence adjustment** (±15) shown alongside the engine score, with a short rationale. See [LLM research agent](#llm-research-agent-groq-free-tier).
 - **Collapsible sections & hamburger nav** — every major section can be expanded/collapsed, the header carries a hamburger menu at all screen sizes, and each signal page ends with a **"How confidence was derived"** breakdown showing the weighted sub-score math.
@@ -278,84 +278,72 @@ Yahoo symbol in `YAHOO_SYMBOL_BY_FUTURE`).
 
 ---
 
-## FVG screener
+## Strategy — SMC multi-timeframe analysis
 
-A second, independent workflow that reads the price action a discretionary trader would mark up:
-a **confirmed breakout structure** sets the direction, and the **Fair Value Gap** that leg left
-behind sets the entry.
+The app runs one strategy, in two steps.
 
-### Definitions
+### Step 1 — primary analysis (daily candles)
 
-| Term | Meaning |
+1. **Structure.** Read the daily swing sequence and call the market bullish or bearish.
+2. **Break of structure.** Look for a definitive close beyond a significant prior swing in that
+   direction — above a swing high for bullish, below a swing low for bearish.
+3. **Fair value gap.** Find the gap left by the impulse that broke structure: bullish is the space
+   between candle 1's high and candle 3's low, bearish between candle 1's low and candle 3's high,
+   with candle 2 the displacement candle.
+
+> **If no valid, unmitigated gap exists relative to the break, confidence is 0 and the analysis
+> stops.** No gap, no trade.
+
+### Step 2 — refinement (4-hour candles)
+
+Zoom into that daily gap on the 4-hour chart:
+
+| Element | Rule |
 |---|---|
-| **Bullish Fair Value Gap** | The gap between the **high of candle 1** and the **low of candle 3**, where candle 2 is a strong bullish displacement candle |
-| **Bearish Fair Value Gap** | The gap between the **low of candle 1** and the **high of candle 3**, where candle 2 is a strong bearish displacement candle |
-| **Displacement candle** | Body ≥ 55% of its own range, range ≥ 1.0 × Average True Range, closing in the direction of travel |
-| **Mitigation** | How far later candles have traded back through a zone. Past 90% it is treated as consumed |
-| **Proximal edge** | The side price meets first when it retraces in — the top of a bullish gap, the bottom of a bearish one |
+| **Entry** | The gap's **50% mean threshold** |
+| **Stop** | Beyond the swing point that *created* the gap — a structural invalidation, not the gap edge, so a wick cannot take it out |
+| **Take profit** | The next liquidity pool: the nearest confirmed swing beyond the entry, on the 4H or 1D chart |
+| **Validation** | Only a trade at **1:1.6 risk-to-reward or better** |
 
-Breakout structures recognised: **BOS** (break of structure), **CHoCH** (change of character),
-**range / consolidation breakout**, **flag or pennant breakout**, **trendline break**, and
-**supply / demand flip**.
+Four-hour candles are aggregated from hourly bars, bucketed on the UTC clock, because Alpaca has no
+native 4-hour interval.
 
-### Step 1 — the shortlist
+### Output
 
-`GET /api/fvg/shortlist` screens the universe and returns **only** the ranked table:
+The verdict is a plain-text block with fixed labels — no JSON, no code fences, nothing outside the
+structure:
 
-| Ticker | Direction | Setup type | Breakout level | FVG zone | Entry zone | Stop | Target 1 | Target 2 | R:R | Confidence | Why |
-|---|---|---|---|---|---|---|---|---|---|---|---|
+```
+Symbol: AAPL
+Confidence Score: 83
+Trend Direction: Bearish
+1D BOS Confirmed: Yes
+1D FVG Zone: 93.90 - 95.03
+4H Refinement:
+Entry Price: 94.47
+Stop Loss: 95.12
+Take Profit: 91.85
+Risk Reward Ratio: 1:3.96
+Reasoning: Bearish structure confirmed by a 1D break of structure at 91.85. The impulse left a
+bearish fair value gap between 93.90 and 95.03. Price has not yet reached the gap; the mean
+threshold is a resting entry. Stop sits beyond the structural swing at 95.12 and the first
+liquidity pool is 91.85, giving 1:3.96.
+```
 
-Ranking is by status first — an actionable setup, then one **waiting** on a retrace, then the
-near-misses — and by confidence within each band. Only instruments with a structure **and** a
-matching gap are listed; a screener that lists everything it looked at is not a screener.
-
-The response carries **no annotations, no markup and no candles**. That is enforced by a test.
-
-### Step 2 — the drill-down
-
-`GET /api/fvg/{ticker}` returns the markup for **one** ticker, and the UI only calls it after the
-user picks a row:
-
-- **Chart annotations** — FVG bands (the one being traded is emphasised), the breakout level or
-  trendline, the consolidation box, the entry band, entry marker, stop and both targets.
-- **Signal card** — `BUY` / `SELL` / `WAIT` / `NO TRADE` with exact levels, risk per share, the
-  risk-per-trade setting, the reasons, the blockers and the invalidation condition.
-- **Chart markup** — the whole marking as portable JSON, so the same view can be redrawn or shared.
-
-Zones are painted on a canvas layered over the candles and repainted on every pan, zoom and resize;
-levels become price lines so they carry an axis label.
-
-### Rules the engine will not break
-
-- **No repainting.** A daily bar dated today is treated as still forming and dropped *before*
-  resampling, so weekly and monthly candles are built only from completed sessions. A zone can
-  never appear and then vanish.
-- **No forced signals.** If there is no confirmed breakout, no matching open gap, or the reward does
-  not clear `FVG_MIN_RR` (default **2.0**), the answer is `WAIT` or `NO TRADE` — with the levels and
-  the reason.
-- **Explicit levels and timeframes.** Every row states its interval; every level is a number.
+When the rules fail — no break of structure, no valid gap, or reward below the floor — the block
+still renders, with **Confidence Score: 0** and a Reasoning that opens with **No Trade**.
 
 ### Configuration
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `FVG_MAX_WATCHLIST` | 20 | Maximum shortlist size |
-| `FVG_MIN_RR` | 2.0 | Minimum reward-to-risk at target 1 |
-| `RISK_PER_TRADE_PCT` | 1.0 | Share of equity risked per trade |
-| `EARNINGS_BUFFER_DAYS` | 7 | Avoid instruments reporting inside this window |
-| `FVG_MIN_MARKET_CAP` | 2e9 | Floor, **applied only when a market-cap source exists** |
-| `MIN_PRICE` / `MIN_VOLUME` | 5.0 / 500k | Liquidity floors |
-| `FVG_TIMEFRAMES` | `DAILY` | Intervals the screener reads |
-| `ALLOW_EARNINGS_PLAYS` | false | Ignore the earnings buffer |
+| `SMC_MIN_RISK_REWARD` | 1.6 | The floor. Below it the answer is No Trade |
+| `SMC_MAX_RESULTS` | 20 | Maximum rows a scan returns |
+| `INTRADAY_DAYS` | 60 | Days of hourly bars behind the 4H chart |
 
-Two limits worth stating plainly:
-
-- **Intraday is not enabled.** The brief asks for 4H structure and 1H/15m entry timing; that needs
-  an intraday bar feed, and this deployment ingests daily bars only. The API says so in every
-  response rather than implying otherwise.
-- **Market cap is not filtered unless you add a source.** Set a Finnhub key and the screener fetches
-  caps for the shortlisted names and applies the floor. Without one, the response reports the filter
-  as *not applied* instead of quietly skipping it.
+**No repainting.** A daily bar dated today is treated as still forming and dropped before anything
+else runs, so the 4H series is built only from completed sessions. A zone can never appear and then
+vanish.
 
 > Educational and analytical output only. It is not financial advice.
 
@@ -567,7 +555,7 @@ The frontend is a **static export** and FastAPI serves it at `/`, so the whole a
    `https://<service>.onrender.com` — that **single URL is the whole app** (`/api/health` for
    the health check, `/docs` for the API).
 5. Because free instances sleep, `DISABLE_SCHEDULER=true`; the daily 8:30 PM SGT pull runs from
-   `.github/workflows/daily-cron.yml` (add your Render URL + `SECRET_KEY` as repo secrets).
+   *there is no cron workflow* — data is refreshed from the app.
 
 Local production check: `docker compose up --build` → <http://localhost:8000>.
 
@@ -618,7 +606,7 @@ If you prefer separate hosts, the frontend is still self-contained:
 2. **Frontend** → any static host: build with `NEXT_PUBLIC_API_BASE=https://your-api-host`
    (`frontend/Dockerfile` produces an nginx image, or serve `frontend/out` from a CDN).
 3. **Database** → Neon/Supabase (free Postgres). Optionally run `deploy/timescale.sql` to enable the hypertable.
-4. **Cron** → enable `.github/workflows/daily-cron.yml` (free) and set the repository secrets (`DATABASE_URL`, `SECRET_KEY`, provider keys, `API_BASE_URL`). Keep `DISABLE_SCHEDULER=true` on hosts that sleep.
+4. **No cron** — data is pulled on demand from the app's Refresh button.
 
 ---
 
@@ -631,7 +619,7 @@ If you prefer separate hosts, the frontend is still self-contained:
 │   │   ├── core/           # sma_strategy (setup engine), indicators, confidence, regime, backtest
 │   │   ├── providers/      # Alpaca / Finnhub / FRED / Polygon / Yahoo / MOCK adapters
 │   │   ├── services/       # credentials, data ingestion, macro, signals, outcomes, refresh
-│   │   ├── tasks/          # APScheduler jobs
+│   │   ├── tasks/          # job helpers (nothing is scheduled)
 │   │   ├── models.py       # SQLAlchemy models
 │   │   ├── schemas.py      # Pydantic schemas
 │   │   └── main.py         # FastAPI app (also serves the exported frontend)
@@ -646,7 +634,6 @@ If you prefer separate hosts, the frontend is still self-contained:
 ├── render.yaml             # Render blueprint (single service)
 ├── deploy/timescale.sql
 ├── docker-compose.yml
-├── .github/workflows/daily-cron.yml
 └── LICENSE
 ```
 

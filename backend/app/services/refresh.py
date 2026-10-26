@@ -7,8 +7,9 @@ regenerates signals for the most recent completed trading day.
 from __future__ import annotations
 
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dtime, timedelta
 
+from ..config import get_settings
 from ..models import EarningsEvent, MacroEvent, Signal
 from ..providers.registry import resolve_macro_provider, resolve_market_provider
 from . import credentials as creds_svc
@@ -18,6 +19,8 @@ from . import data_service, outcome_service, signal_service
 # plus a 30-candle structure lookback, so two years is not enough.
 BAR_HISTORY_DAYS = 2200
 CALENDAR_DAYS = 90
+#: Days of hourly bars pulled for the 4-hour refinement chart.
+INTRADAY_DAYS = get_settings().intraday_days
 
 _lock = threading.Lock()
 _state: dict = {
@@ -90,6 +93,16 @@ def _do_refresh(db, user_id: int) -> dict:
     n_bars = data_service.ingest_bars(db, market, tickers, start, today)
     # Index futures (MES) come from a separate source and are best-effort.
     futures_info = data_service.ingest_index_futures(db, start, today)
+
+    # Hourly bars behind the 4-hour refinement chart. Without these the strategy
+    # can still read daily structure, but it will (correctly) refuse to trade
+    # because the entry, stop and reward cannot be validated.
+    intraday_start = datetime.combine(today - timedelta(days=INTRADAY_DAYS), dtime.min)
+    intraday_end = datetime.combine(today, dtime.max)
+    n_intraday = data_service.ingest_intraday_bars(
+        db, market, tickers, intraday_start, intraday_end, interval="1Hour"
+    )
+
     data_service.ingest_macro_events(
         db, macro, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS)
     )
@@ -104,6 +117,7 @@ def _do_refresh(db, user_id: int) -> dict:
         "provider": market.name,
         "tickers": len(tickers),
         "bars": n_bars,
+        "intraday_bars": n_intraday,
         "futures": futures_info,
         "signal_date": str(data_service.latest_trading_day(db) or today),
         "signals": counts,

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -10,7 +10,7 @@ import {
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
-import type { BarOut, FvgAnnotation } from "@/lib/types";
+import type { BarOut, ChartAnnotation } from "@/lib/types";
 
 type Line = (number | null)[];
 
@@ -36,7 +36,7 @@ function withAlpha(hex: string, alpha: number): string {
  * Candlestick chart with optional FVG / breakout markup.
  *
  * Levels (breakout, entry, stop, targets) are drawn as price lines so they get
- * axis labels. Zones — Fair Value Gaps, consolidation boxes and the entry band —
+ * axis labels. Zones â€” Fair Value Gaps, consolidation boxes and the entry band â€”
  * are painted on a transparent canvas layered over the chart, because
  * lightweight-charts has no rectangle primitive. The canvas is repainted on every
  * pan, zoom and resize so the shading stays locked to the candles.
@@ -50,13 +50,13 @@ export default function PriceChart({
   bars: BarOut[];
   ema20?: Line;
   ema50?: Line;
-  annotations?: FvgAnnotation[];
+  annotations?: ChartAnnotation[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const annotationsRef = useRef<FvgAnnotation[]>(annotations);
+  const annotationsRef = useRef<ChartAnnotation[]>(annotations);
   annotationsRef.current = annotations;
 
   const paint = useCallback(() => {

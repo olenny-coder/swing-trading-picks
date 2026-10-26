@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -6,8 +6,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 
 const PUBLIC_LINKS = [
-  { href: "/", label: "Daily View" },
-  { href: "/fvg", label: "FVG Screener" },
+  { href: "/", label: "SMC Analysis" },
   { href: "/history", label: "History" },
   { href: "/macro", label: "Macro" },
 ];
@@ -74,7 +73,7 @@ export function Nav() {
             )}
           </div>
 
-          {/* Hamburger menu — available at every screen size */}
+          {/* Hamburger menu â€” available at every screen size */}
           <div className="relative">
             <button
               type="button"
