@@ -199,5 +199,7 @@ export interface RefreshStatus {
     signal_date: string;
     signals: Record<string, number>;
   } | null;
+  //: Current stage of the job, so a long pull is not a black box.
+  progress: string | null;
   error: string | null;
 }

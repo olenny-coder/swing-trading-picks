@@ -446,6 +446,38 @@ class TestSmcApi(unittest.TestCase):
         source = inspect.getsource(refresh_service._do_refresh)
         self.assertIn("clear_cache()", source)
 
+    def test_refresh_status_reports_progress(self):
+        """A long pull must say what it is doing, not just 'running'."""
+        login = self.client.post(
+            "/api/auth/login", json={"username": "admin", "password": "testpass"}
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        body = self.client.get("/api/refresh/status", headers=headers).json()
+        self.assertIn("progress", body)
+        self.assertIn("running", body)
+
+    def test_a_dropped_poll_does_not_abort_the_wait(self):
+        """The client treats a network blip as a retry, not a failure."""
+        import io as _io
+        import os as _os
+
+        path = _os.path.join(
+            _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))),
+            "frontend",
+            "components",
+            "RefreshButton.tsx",
+        )
+        if not _os.path.exists(path):
+            self.skipTest("frontend not present")
+        body = _io.open(path, encoding="utf-8").read()
+        # The poll loop catches status errors and keeps going.
+        self.assertIn("failedPolls", body)
+        self.assertIn("continue", body)
+        # And it adopts a job that outlived the page.
+        self.assertIn("refreshStatus", body)
+        self.assertIn("status.running", body)
+
     def test_scan_refresh_parameter_bypasses_the_cache(self):
         first = self.client.get("/api/smc/scan").json()
         again = self.client.get("/api/smc/scan?refresh=true").json()

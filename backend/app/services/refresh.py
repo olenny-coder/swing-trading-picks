@@ -32,12 +32,20 @@ _state: dict = {
     "finished_at": None,
     "result": None,
     "error": None,
+    #: Human-readable stage, so a five-minute pull is not a black box.
+    "progress": None,
 }
 
 
 def get_state() -> dict:
     with _lock:
         return dict(_state)
+
+
+def _set_progress(step: str) -> None:
+    """Record what the refresh is doing right now."""
+    with _lock:
+        _state["progress"] = step
 
 
 def start_refresh(session_factory, user_id: int) -> bool:
@@ -53,6 +61,7 @@ def start_refresh(session_factory, user_id: int) -> bool:
         _state["finished_at"] = None
         _state["result"] = None
         _state["error"] = None
+        _state["progress"] = "starting"
 
     def worker() -> None:
         try:
@@ -63,9 +72,12 @@ def start_refresh(session_factory, user_id: int) -> bool:
                 db.close()
             with _lock:
                 _state["result"] = result
+                _state["progress"] = "finished"
         except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("refresh failed: %s", exc, exc_info=True)
             with _lock:
                 _state["error"] = f"{type(exc).__name__}: {exc}"
+                _state["progress"] = "failed"
         finally:
             with _lock:
                 _state["running"] = False
@@ -219,15 +231,18 @@ def _do_refresh(db, user_id: int) -> dict:
     # Clear stale signals/macro/earnings (e.g. a prior MOCK seed) so the switch
     # to real data doesn't leave synthetic rows behind. Bars are replaced
     # wholesale per-ticker by ingest_bars below.
+    _set_progress("clearing previous signals")
     db.query(Signal).delete(synchronize_session=False)
     db.query(MacroEvent).delete(synchronize_session=False)
     db.query(EarningsEvent).delete(synchronize_session=False)
     db.commit()
 
+    _set_progress(f"downloading daily bars for {len(tickers)} symbols")
     n_bars, bars_source, bars_errors = _ingest_with_fallback(
         db, sources, data_service.ingest_bars, tickers, start, today
     )
     # Index futures (MES) come from a separate source and are best-effort.
+    _set_progress("downloading index futures")
     futures_info = data_service.ingest_index_futures(db, start, today)
 
     # 4-hour candles behind the refinement chart — Alpaca serves that interval
@@ -235,6 +250,7 @@ def _do_refresh(db, user_id: int) -> dict:
     # refining on the daily chart, which is coarser.
     intraday_start = datetime.combine(today - timedelta(days=INTRADAY_DAYS), dtime.min)
     intraday_end = datetime.combine(today, dtime.max)
+    _set_progress(f"downloading 4-hour candles for {len(tickers)} symbols")
     n_intraday, intraday_source, intraday_errors = _ingest_with_fallback(
         db, sources, data_service.ingest_refinement_bars, tickers, intraday_start, intraday_end
     )
@@ -253,14 +269,17 @@ def _do_refresh(db, user_id: int) -> dict:
             f"No daily bars could be loaded from any source — nothing to analyse. {detail}".strip()
         )
 
+    _set_progress("downloading the economic calendar")
     data_service.ingest_macro_events(
         db, macro, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS)
     )
     data_service.ingest_earnings(
         db, macro, tickers, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS)
     )
+    _set_progress("generating signals")
     counts = signal_service.generate_signals(db, market, macro)
     # Replay older picks so History can show whether they worked out.
+    _set_progress("scoring past picks")
     outcomes = outcome_service.update_outcomes(db)
 
     # New data must not be masked by the scan cache, or the user refreshes and still

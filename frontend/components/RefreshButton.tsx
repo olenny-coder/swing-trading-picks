@@ -1,54 +1,123 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import type { RefreshStatus } from "@/lib/api";
 
+/**
+ * Downloads market data, then polls the background job.
+ *
+ * Two things this deliberately tolerates, because a long pull on a small host
+ * will hit them:
+ *
+ * - **A dropped poll is not a failed refresh.** One `Failed to fetch` used to
+ *   abort the whole wait and report an error while the job was still running
+ *   fine. Transient failures are now counted and retried.
+ * - **The job outlives the page.** If the tab is reloaded mid-pull, the component
+ *   adopts the running job on mount instead of pretending nothing is happening.
+ */
 export function RefreshButton({ onDone }: { onDone?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
 
+  const applyResult = useCallback(
+    (status: RefreshStatus) => {
+      if (status.error) {
+        setMessage(`Refresh error: ${status.error}`);
+        return;
+      }
+      const r = status.result;
+      if (!r) {
+        setMessage("Refresh finished.");
+        return;
+      }
+      const intraday = r.intraday_bars ?? 0;
+      setMessage(
+        `Done — ${r.bars.toLocaleString()} daily bars · ${intraday.toLocaleString()} 4-hour candles · ${r.tickers} tickers via ${r.refinement_source ?? r.provider} (signal date ${r.signal_date}).`,
+      );
+      // A refresh that loads no 4-hour candles looks like success but leaves every
+      // setup refused, so say so rather than showing a plain "Done".
+      setWarnings(
+        intraday === 0
+          ? [
+              "No 4-hour candles were loaded — every setup will be reported as No Trade until they are.",
+              ...(r.warnings ?? []),
+            ]
+          : (r.warnings ?? []),
+      );
+    },
+    [],
+  );
+
+  const poll = useCallback(async () => {
+    let failedPolls = 0;
+    for (let i = 0; i < 240; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      let status: RefreshStatus;
+      try {
+        status = await api.refreshStatus();
+        failedPolls = 0;
+      } catch {
+        // The connection dropped. Keep waiting: the job runs server-side.
+        failedPolls += 1;
+        if (failedPolls <= 3) {
+          setMessage(`Connection blipped — still waiting for the refresh (retry ${failedPolls}/3)…`);
+          continue;
+        }
+        setMessage(
+          "Lost contact with the server. The refresh is still running there — reload the page in a minute to see the result.",
+        );
+        return;
+      }
+
+      if (status.running) {
+        setMessage(status.progress ? `Working — ${status.progress}…` : "Pulling latest market data…");
+        continue;
+      }
+
+      applyResult(status);
+      onDone?.();
+      return;
+    }
+    setMessage(
+      "Still running after 12 minutes. The job continues on the server — reload the page shortly to see the outcome.",
+    );
+  }, [applyResult, onDone]);
+
+  // Adopt a refresh that is already running (e.g. after a reload mid-pull).
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .refreshStatus()
+      .then((status) => {
+        if (cancelled || !status.running) return;
+        setBusy(true);
+        setMessage(status.progress ? `Working — ${status.progress}…` : "A refresh is already running…");
+        void poll().finally(() => setBusy(false));
+      })
+      .catch(() => {
+        /* not signed in, or offline — nothing to adopt */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [poll]);
+
   async function refresh() {
     setBusy(true);
-    setMessage("Pulling latest market data…");
+    setMessage("Starting the download…");
     setWarnings([]);
     try {
       await api.refreshData();
-      let done = false;
-      // Poll up to ~6 minutes (120 x 3s) for the background pull to finish.
-      for (let i = 0; i < 120; i++) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const s = await api.refreshStatus();
-        if (!s.running) {
-          if (s.error) {
-            setMessage(`Refresh error: ${s.error}`);
-          } else if (s.result) {
-            const r = s.result;
-            const intraday = r.intraday_bars ?? 0;
-            setMessage(
-              `Done — ${r.bars.toLocaleString()} daily bars · ${intraday.toLocaleString()} 4-hour candles · ${r.tickers} tickers via ${r.refinement_source ?? r.provider} (signal date ${r.signal_date}).`,
-            );
-            // A refresh that loads no 4-hour candles looks like success but leaves
-            // every setup refused, so say so rather than showing a green "Done".
-            setWarnings(
-              intraday === 0
-                ? [
-                    "No 4-hour candles were loaded — every setup will be reported as No Trade until they are.",
-                    ...(r.warnings ?? []),
-                  ]
-                : (r.warnings ?? []),
-            );
-          } else {
-            setMessage("Refresh finished.");
-          }
-          done = true;
-          break;
-        }
-      }
-      if (!done) setMessage("Refresh is still running in the background.");
-      onDone?.();
+      await poll();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Refresh failed");
+      // Only a failure to *start* lands here; polling handles its own errors.
+      setMessage(
+        e instanceof Error
+          ? `Could not start the refresh: ${e.message}`
+          : "Could not start the refresh.",
+      );
     } finally {
       setBusy(false);
     }
