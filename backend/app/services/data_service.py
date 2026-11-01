@@ -70,58 +70,6 @@ def load_bars(db: Session, ticker: str, start: date, end: date) -> list[Bar]:
     ]
 
 
-def ingest_intraday_bars(
-    db: Session,
-    provider: MarketDataProvider,
-    tickers: list[str],
-    start: datetime,
-    end: datetime,
-    interval: str = "1Hour",
-) -> int:
-    """Fetch and store intraday candles. Returns the number of rows inserted.
-
-    Best-effort per instrument: a provider without intraday history simply
-    contributes nothing, and the strategy then says the 4-hour refinement could
-    not run rather than inventing an entry.
-    """
-    from ..models import IntradayBar as IntradayBarRow
-
-    total = 0
-    for ticker in tickers:
-        try:
-            bars = provider.get_intraday_bars(ticker, start, end, interval=interval)
-        except Exception:
-            continue
-        if not bars:
-            continue
-        db.query(IntradayBarRow).filter(
-            IntradayBarRow.ticker == ticker,
-            IntradayBarRow.interval == interval,
-            IntradayBarRow.ts >= start,
-            IntradayBarRow.ts <= end,
-        ).delete(synchronize_session=False)
-        db.add_all(
-            [
-                IntradayBarRow(
-                    ticker=ticker,
-                    interval=interval,
-                    ts=b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts,
-                    open=b.open,
-                    high=b.high,
-                    low=b.low,
-                    close=b.close,
-                    volume=b.volume,
-                )
-                for b in bars
-            ]
-        )
-        total += len(bars)
-        if total % 20000 < len(bars):
-            db.flush()
-    db.commit()
-    return total
-
-
 def load_intraday_bars(
     db: Session, ticker: str, start: datetime, end: datetime, interval: str = "1Hour"
 ) -> list[IntradayBar]:
@@ -211,17 +159,25 @@ def ingest_refinement_bars(
     The provider contract is that ``interval="4Hour"`` returns 4-hour candles —
     native where the feed supports it, aggregated from hourly where it does not —
     so everything lands in one place and the loader is trivial.
+
+    Per-instrument failures are tolerated, but if **nothing at all** came back the
+    first error is raised, so the refresh reports why instead of quietly claiming
+    success with no data.
     """
     from ..core.intraday import REFINEMENT_INTERVAL
     from ..models import IntradayBar as IntradayBarRow
+    from ..providers.base import ProviderError
 
     total = 0
+    errors: list[str] = []
     for ticker in tickers:
         try:
             bars = provider.get_intraday_bars(ticker, start, end, interval=REFINEMENT_INTERVAL)
-        except Exception:
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {exc}"[:200])
             continue
         if not bars:
+            errors.append("provider returned no candles")
             continue
         db.query(IntradayBarRow).filter(
             IntradayBarRow.ticker == ticker,
@@ -248,6 +204,9 @@ def ingest_refinement_bars(
         if total % 20000 < len(bars):
             db.flush()
     db.commit()
+
+    if total == 0 and errors:
+        raise ProviderError(f"no 4-hour candles returned — {errors[0]}")
     return total
 
 

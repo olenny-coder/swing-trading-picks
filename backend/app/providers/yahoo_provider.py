@@ -21,7 +21,6 @@ from ..core.constants import SECTOR_ETFS
 from ..core.regime import classify_regime, sector_relative_strength
 from ..core.universe import (
     FUTURES,
-    UNIVERSE,
     FUTURES_NAME_BY_TICKER,
     FUTURES_SECTOR_BY_TICKER,
     YAHOO_SYMBOL_BY_FUTURE,
@@ -290,73 +289,3 @@ class YahooFuturesProvider(MarketDataProvider):
             return Quote(ticker=ticker, price=0.0)
         last = bars[-1]
         return Quote(ticker=ticker, price=last.close, volume=last.volume)
-
-
-class YahooMarketProvider(MarketDataProvider):
-    """Key-free daily and 4-hour candles for US equities, from Yahoo Finance.
-
-    Used as a fallback when the configured market provider cannot serve data — an
-    expired key should degrade the app to "real prices from a free source" rather
-    than to nothing at all. It is not a substitute for a paid feed: Yahoo's intraday
-    history is shallower and its terms are stricter, so it is only ever the second
-    choice.
-    """
-
-    name = "yahoo"
-
-    def __init__(self, min_price: float = 5.0, min_volume: float = 500_000.0) -> None:
-        self._http: httpx.Client | None = None
-
-    @property
-    def client(self) -> httpx.Client:
-        if self._http is None:
-            self._http = httpx.Client(timeout=25.0)
-        return self._http
-
-    def test_connection(self) -> tuple[bool, str, dict | None]:
-        try:
-            bars = self.get_daily_bars("SPY", date.today() - timedelta(days=10), date.today())
-            if not bars:
-                return False, "Yahoo returned no candles.", None
-            return True, "Connected to Yahoo Finance (key-free fallback).", {"SPY": bars[-1].close}
-        except Exception as exc:  # pragma: no cover - network
-            return False, f"Yahoo Finance unavailable: {exc}", None
-
-    def get_universe(
-        self, min_price: float = 5.0, min_volume: float = 500_000.0
-    ) -> list[UniverseMeta]:
-        return [
-            UniverseMeta(ticker=ticker, name=name, sector=sector)
-            for ticker, name, sector in UNIVERSE
-        ]
-
-    def get_daily_bars(self, ticker: str, start: date, end: date) -> list[Bar]:
-        result = _window(_epoch(start), _epoch(end) + 86400, "1d", self.client, ticker)
-        return _parse_chart(result, "1d")
-
-    def get_intraday_bars(
-        self, ticker: str, start: datetime, end: datetime, interval: str = "4Hour"
-    ) -> list[IntradayBar]:
-        """4-hour candles, aggregated from Yahoo's hourly series.
-
-        Yahoo has no native 4-hour interval, so hourly bars are fetched and
-        aggregated — the same path a provider without the interval would take.
-        """
-        from ..core.intraday import resample_intraday
-
-        hourly = _parse_chart(
-            _window(_epoch(start), _epoch(end), "1h", self.client, ticker), "1h"
-        )
-        if interval == "1Hour":
-            return hourly
-        return resample_intraday(hourly, drop_incomplete=False)
-
-    def get_quote(self, ticker: str) -> Quote:
-        end = date.today()
-        try:
-            bars = self.get_daily_bars(ticker, end - timedelta(days=14), end)
-        except Exception:
-            bars = []
-        if not bars:
-            return Quote(ticker=ticker, price=0.0)
-        return Quote(ticker=ticker, price=bars[-1].close, volume=bars[-1].volume)

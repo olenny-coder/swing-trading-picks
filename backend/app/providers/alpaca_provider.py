@@ -10,7 +10,7 @@ credential service) and are never logged or serialized.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import httpx
 
@@ -20,6 +20,21 @@ from .base import Bar, IntradayBar, MarketDataProvider, ProviderError, Quote, Un
 _PAPER_API = "https://paper-api.alpaca.markets"
 _LIVE_API = "https://api.alpaca.markets"
 _DATA_API = "https://data.alpaca.markets"
+
+
+def _rfc3339(stamp: datetime) -> str:
+    """Format a timestamp the way Alpaca's bars endpoint requires.
+
+    Alpaca accepts RFC-3339 with an explicit offset (``...T00:00:00Z``) or a bare
+    ``YYYY-MM-DD``. A naive ``datetime.isoformat()`` produces ``...T00:00:00``,
+    which is neither — and the request is rejected. That is why daily bars worked
+    while every intraday request silently came back empty.
+    """
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    else:
+        stamp = stamp.astimezone(timezone.utc)
+    return stamp.isoformat().replace("+00:00", "Z")
 
 
 class AlpacaProvider(MarketDataProvider):
@@ -117,15 +132,30 @@ class AlpacaProvider(MarketDataProvider):
         """Candles at ``interval`` for the refinement chart.
 
         Alpaca accepts an ``amount + unit`` timeframe, so ``4Hour`` is a
-        first-class interval — no need to aggregate hourly bars ourselves. If the
-        feed refuses it, hourly bars are fetched and aggregated so the strategy
-        still gets a 4-hour series.
+        first-class interval — no need to aggregate hourly bars ourselves. If that
+        request is refused (an unsupported timeframe, or a plan that will not serve
+        it), hourly bars are fetched and aggregated instead. Only when **both** fail
+        is the original error raised, so the caller still learns the real reason.
         """
-        bars = self._intraday(ticker, start, end, interval)
-        if bars or interval == "1Hour":
-            return bars
-        hourly = self._intraday(ticker, start, end, "1Hour")
-        if interval == "4Hour" and hourly:
+        try:
+            bars = self._intraday(ticker, start, end, interval)
+        except Exception as exc:
+            if interval == "1Hour":
+                raise
+            first_error: Exception = exc
+        else:
+            if bars or interval == "1Hour":
+                return bars
+            first_error = ProviderError(f"no candles returned for {interval}")
+
+        try:
+            hourly = self._intraday(ticker, start, end, "1Hour")
+        except Exception:
+            raise first_error
+
+        if not hourly:
+            raise first_error
+        if interval == "4Hour":
             from ..core.intraday import resample_intraday
 
             return resample_intraday(hourly)
@@ -140,24 +170,17 @@ class AlpacaProvider(MarketDataProvider):
         for _ in range(2):
             params = {
                 "timeframe": interval,
-                "start": start.isoformat(),
-                "end": end.isoformat(),
+                "start": _rfc3339(start),
+                "end": _rfc3339(end),
                 "limit": 10000,
                 "adjustment": "split",
                 "feed": self.data_feed,
             }
             if token:
                 params["page_token"] = token
-            try:
-                data = self._get(_DATA_API, f"/v2/stocks/{ticker}/bars", params)
-            except ProviderError as exc:
-                # An auth failure must reach the caller, otherwise the refresh
-                # reports "no 4-hour candles" and hides the real cause.
-                if "credentials" in str(exc).lower():
-                    raise
-                return bars
-            except Exception:
-                return bars
+            # Errors propagate: the caller records them and the refresh reports
+            # them, instead of reporting "no candles" and hiding the cause.
+            data = self._get(_DATA_API, f"/v2/stocks/{ticker}/bars", params)
             for b in data.get("bars", []):
                 stamp = b["t"]
                 if stamp.endswith("Z"):

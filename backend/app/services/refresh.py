@@ -76,14 +76,13 @@ def start_refresh(session_factory, user_id: int) -> bool:
 
 
 def _price_source(db, market):
-    """The configured market provider, plus a key-free Yahoo fallback.
+    """The configured market provider.
 
-    An expired or rotated key should degrade the app to real prices from a free
-    source rather than to nothing at all.
+    Alpaca only: it serves daily and 4-hour candles natively, so there is no
+    second source to fall back to. Keeping one source also means a failure is
+    reported as a failure instead of being masked by a substitute.
     """
-    from ..providers.yahoo_provider import YahooMarketProvider
-
-    return [(market, market.name), (YahooMarketProvider(), "yahoo")]
+    return [(market, market.name)]
 
 
 def _ingest_with_fallback(db, sources, ingest, *args) -> tuple[int, str, dict[str, str]]:
