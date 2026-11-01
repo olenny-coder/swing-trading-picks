@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useRef } from "react";
 import {
@@ -10,7 +10,17 @@ import {
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
-import type { BarOut, ChartAnnotation } from "@/lib/types";
+import type { ChartAnnotation } from "@/lib/types";
+
+/** A candle the chart can draw. `date` is a business day, or an epoch second for
+ *  intraday series — lightweight-charts accepts either as a `Time`. */
+export interface ChartBar {
+  date: string | number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
 
 type Line = (number | null)[];
 
@@ -47,7 +57,7 @@ export default function PriceChart({
   ema50,
   annotations = [],
 }: {
-  bars: BarOut[];
+  bars: ChartBar[];
   ema20?: Line;
   ema50?: Line;
   annotations?: ChartAnnotation[];
@@ -166,7 +176,14 @@ export default function PriceChart({
     });
     seriesRef.current = candle;
     candle.setData(
-      bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })),
+      // A business-day string or an epoch second are both valid `Time` values.
+      bars.map((b) => ({
+        time: b.date as Time,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+      })),
     );
 
     if (ema20) {

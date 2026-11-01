@@ -150,6 +150,12 @@ class AlpacaProvider(MarketDataProvider):
                 params["page_token"] = token
             try:
                 data = self._get(_DATA_API, f"/v2/stocks/{ticker}/bars", params)
+            except ProviderError as exc:
+                # An auth failure must reach the caller, otherwise the refresh
+                # reports "no 4-hour candles" and hides the real cause.
+                if "credentials" in str(exc).lower():
+                    raise
+                return bars
             except Exception:
                 return bars
             for b in data.get("bars", []):

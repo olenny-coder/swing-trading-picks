@@ -403,6 +403,26 @@ class TestSmcApi(unittest.TestCase):
         # The weekend question deserves a straight answer in the payload.
         self.assertIn("closed", status["market_day_note"])
 
+    def test_drilldown_exposes_the_refinement_chart(self):
+        """The drill-down must carry the candle series the levels were read on."""
+        body = self._scan()
+        if not body["results"]:
+            self.skipTest("no demo results")
+        detail = self.client.get(f"/api/smc/{body['results'][0]['symbol']}").json()
+        self.assertIn("refinement_timeframe", detail)
+        self.assertIn(detail["refinement_timeframe"], ("4H", "1D"))
+        self.assertIn("refinement_bars", detail)
+        if detail["refinement_timeframe"] == "4H":
+            self.assertTrue(detail["refinement_bars"], "a 4H refinement needs its candles")
+            for bar in detail["refinement_bars"][:3]:
+                self.assertIn("time", bar)
+                self.assertLessEqual(bar["low"], bar["high"])
+
+    def test_source_probe_requires_admin(self):
+        self.assertIn(
+            self.client.get("/api/refresh/sources").status_code, (401, 403)
+        )
+
     def test_health_reports_the_deployed_build(self):
         body = self.client.get("/api/health").json()
         self.assertEqual(body["status"], "ok")

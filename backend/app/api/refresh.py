@@ -1,7 +1,7 @@
 """On-demand data refresh endpoints (for the UI 'Refresh data' button)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from ..database import SessionLocal
 from ..models import User
@@ -23,3 +23,17 @@ def trigger_refresh(user: User = Depends(get_current_admin)) -> dict:
 def refresh_status(user: User = Depends(get_current_admin)) -> dict:
     """Current refresh state: running flag, result, or error."""
     return refresh_service.get_state()
+
+
+@router.get("/sources")
+def probe_sources(
+    ticker: str = Query(default="AAPL"),
+    user: User = Depends(get_current_admin),
+) -> dict:
+    """Probe every price source for daily and 4-hour candles.
+
+    Answers "why is my 4-hour data unavailable?" without reading container logs:
+    each source is called for one symbol and reports its status, row count, timing
+    and the exact error when it fails.
+    """
+    return refresh_service.probe_sources(SessionLocal, user.id, ticker)

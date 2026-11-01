@@ -277,6 +277,8 @@ class SmcResultOut(BaseModel):
     tradeable: bool = False
     triggered: bool = False
     four_hour_available: bool = False
+    #: Which chart the entry, stop and target were refined on: "4H" or "1D".
+    refinement_timeframe: str = "4H"
     price: float | None = None
     as_of: str | None = None
     bos: dict | None = None

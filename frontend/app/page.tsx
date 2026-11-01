@@ -145,6 +145,22 @@ function ResultCard({ row, onSelect }: { row: SmcResult; onSelect: () => void })
   );
 }
 
+/** 4-hour candles come back as ISO timestamps; the chart wants epoch seconds. */
+function refinementSeries(detail: SmcSymbol) {
+  return detail.refinement_bars.map((b) => ({
+    date: Math.floor(new Date(`${b.time}Z`).getTime() / 1000),
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+  }));
+}
+
+/** Level-only markup — price lines need no date, so they work on either chart. */
+function levelsFor(detail: SmcSymbol): ChartAnnotation[] {
+  return annotationsFor(detail).filter((a) => a.kind === "level");
+}
+
 export default function HomePage() {
   const [scan, setScan] = useState<SmcScan | null>(null);
   const [loading, setLoading] = useState(true);
@@ -377,13 +393,45 @@ export default function HomePage() {
               </div>
 
               <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                <div className="mb-2 flex items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-semibold">Daily structure (1D)</h3>
+                  <span className="text-[11px] text-slate-500">break of structure + gap</span>
+                </div>
                 <PriceChart bars={detail.daily_bars} annotations={annotations} />
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                  Daily structure chart. The shaded band is the 1D fair value gap behind the break;
-                  the dashed lines are the entry and take-profit, the solid red line the stop. All
-                  candles are closed, so nothing here repaints.
+                  The shaded band is the 1D fair value gap behind the break; the dashed lines are
+                  the entry and take-profit, the solid red line the stop. All candles are closed, so
+                  nothing here repaints.
                 </p>
               </div>
+
+              {/* The refinement chart — the clock the levels were actually read on. */}
+              {detail.refinement_bars.length > 0 ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+                  <div className="mb-2 flex items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-semibold">
+                      Refinement ({detail.refinement_timeframe ?? "4H"})
+                    </h3>
+                    <span className="text-[11px] text-slate-500">
+                      {detail.refinement_bars.length} candles · entry, stop and target
+                    </span>
+                  </div>
+                  <PriceChart
+                    bars={refinementSeries(detail)}
+                    annotations={levelsFor(detail)}
+                  />
+                  <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+                    The entry, stop and target on the refinement clock. The entry sits at the gap&apos;s
+                    50% mean threshold, the stop beyond the structural swing that created the gap.
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs leading-relaxed text-amber-200">
+                  No 4-hour candles are stored, so these levels were refined on the daily chart and
+                  the confidence is capped at 60. Press <strong>Refresh</strong> to load the 4-hour
+                  data and get the finer trigger.
+                </div>
+              )}
 
               {detail.reasons.length > 0 && (
                 <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
