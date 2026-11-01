@@ -29,9 +29,53 @@ log = logging.getLogger("app.data")
 BATCH_SIZE = 50
 
 
+def _dedupe(rows: list, key) -> list:
+    """Drop duplicate rows before they reach a unique constraint.
+
+    A batched multi-symbol response can repeat a candle (paginated pages may
+    overlap), and one duplicate poisons the whole transaction: Postgres raises
+    UniqueViolation, the session goes into a failed state, and every later symbol
+    then fails with PendingRollbackError — which hides the real cause.
+    """
+    seen: dict = {}
+    for row in rows:
+        seen[key(row)] = row
+    return list(seen.values())
+
+
+def _replace(db: Session, model, filters: list, build_rows) -> int:
+    """Replace one symbol's rows inside a savepoint.
+
+    The savepoint matters: if a single symbol still violates a constraint, only
+    that symbol is rolled back and the rest of the batch survives. Without it, one
+    bad row aborts the entire refresh *and* leaves the session unusable, which is
+    what produced a PendingRollbackError reported against the wrong step.
+    """
+    rows = build_rows()
+    with db.begin_nested():
+        db.query(model).filter(*filters).delete(synchronize_session=False)
+        db.add_all(rows)
+    return len(rows)
+
+
 def _chunks(items: list, size: int = BATCH_SIZE):
     for start in range(0, len(items), size):
         yield items[start : start + size]
+
+
+def _daily_rows(ticker: str, bars: list) -> list:
+    return [
+        DailyBar(
+            ticker=ticker,
+            date=b.date,
+            open=b.open,
+            high=b.high,
+            low=b.low,
+            close=b.close,
+            volume=b.volume,
+        )
+        for b in bars
+    ]
 
 
 def ingest_bars(
@@ -44,69 +88,49 @@ def ingest_bars(
     """Fetch and store daily bars. Returns the number of rows inserted.
 
     Uses the provider's batched endpoint when it has one, so a 114-name universe
-    costs a handful of requests instead of 114.
+    costs a handful of requests instead of 114. Duplicate dates are dropped and each
+    symbol is written inside a savepoint, so one bad row cannot abort the refresh.
     """
+    total = 0
     multi = getattr(provider, "get_daily_bars_multi", None)
-    if callable(multi):
-        total = 0
-        for chunk in _chunks(list(tickers)):
+
+    for chunk in _chunks(list(tickers)):
+        if callable(multi):
             try:
                 payload = multi(chunk, start, end)
             except Exception as exc:
-                log.warning("batched daily fetch failed (%s); falling back", exc)
+                log.warning("batched daily fetch failed (%s); trying per-symbol", exc)
                 payload = {}
-            for ticker in chunk:
-                bars = payload.get(ticker) or []
-                if not bars:
-                    continue
-                db.query(DailyBar).filter(
-                    DailyBar.ticker == ticker,
-                    DailyBar.date >= start,
-                    DailyBar.date <= end,
-                ).delete(synchronize_session=False)
-                db.add_all(
-                    [
-                        DailyBar(
-                            ticker=ticker,
-                            date=b.date,
-                            open=b.open,
-                            high=b.high,
-                            low=b.low,
-                            close=b.close,
-                            volume=b.volume,
-                        )
-                        for b in bars
-                    ]
-                )
-                total += len(bars)
-        db.commit()
-        return total
+        else:
+            payload = {}
 
-    total = 0
-    for ticker in tickers:
-        bars = provider.get_daily_bars(ticker, start, end)
-        if not bars:
-            continue
-        db.query(DailyBar).filter(
-            DailyBar.ticker == ticker, DailyBar.date >= start, DailyBar.date <= end
-        ).delete(synchronize_session=False)
-        db.add_all(
-            [
-                DailyBar(
-                    ticker=ticker,
-                    date=b.date,
-                    open=b.open,
-                    high=b.high,
-                    low=b.low,
-                    close=b.close,
-                    volume=b.volume,
+        for ticker in chunk:
+            bars = payload.get(ticker) or []
+            if not bars and not callable(multi):
+                try:
+                    bars = provider.get_daily_bars(ticker, start, end)
+                except Exception as exc:
+                    log.warning("daily fetch failed for %s: %s", ticker, exc)
+                    continue
+            if not bars:
+                continue
+
+            bars = _dedupe(bars, key=lambda b: b.date)
+            try:
+                total += _replace(
+                    db,
+                    DailyBar,
+                    [
+                        DailyBar.ticker == ticker,
+                        DailyBar.date >= start,
+                        DailyBar.date <= end,
+                    ],
+                    lambda t=ticker, r=bars: _daily_rows(t, r),
                 )
-                for b in bars
-            ]
-        )
-        total += len(bars)
-        if total % 10000 < len(bars):
-            db.flush()
+            except Exception as exc:
+                log.warning("could not store daily bars for %s: %s", ticker, exc)
+                continue
+
     db.commit()
     return total
 
@@ -205,99 +229,95 @@ def ingest_earnings(
     return count
 
 
+def _refinement_rows(ticker: str, bars: list, interval: str) -> list:
+    from ..models import IntradayBar as IntradayBarRow
+
+    return [
+        IntradayBarRow(
+            ticker=ticker,
+            interval=interval,
+            ts=b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts,
+            open=b.open,
+            high=b.high,
+            low=b.low,
+            close=b.close,
+            volume=b.volume,
+        )
+        for b in bars
+    ]
+
+
 def ingest_refinement_bars(
     db: Session, provider: MarketDataProvider, tickers: list[str], start: datetime, end: datetime
 ) -> int:
     """Fetch and store the 4-hour refinement candles.
 
     The provider contract is that ``interval="4Hour"`` returns 4-hour candles —
-    native where the feed supports it, aggregated from hourly where it does not —
-    so everything lands in one place and the loader is trivial.
+    native where the feed supports it, aggregated from hourly where it does not.
 
-    Per-instrument failures are tolerated, but if **nothing at all** came back the
-    first error is raised, so the refresh reports why instead of quietly claiming
-    success with no data.
+    Two failure modes are handled explicitly, both of which previously surfaced as a
+    PendingRollbackError blamed on the wrong step:
+
+    - **Duplicate candles** in a batched payload would violate the
+      ``(ticker, interval, timestamp)`` unique constraint. They are deduplicated
+      first.
+    - **One bad symbol** would abort the whole transaction and leave the session
+      unusable. Each symbol is written inside a savepoint, so it is isolated.
+
+    If nothing at all was stored, the first error is raised so the refresh reports
+    why instead of quietly claiming success with no data.
     """
     from ..core.intraday import REFINEMENT_INTERVAL
     from ..models import IntradayBar as IntradayBarRow
     from ..providers.base import ProviderError
 
+    total = 0
+    errors: list[str] = []
     multi = getattr(provider, "get_intraday_bars_multi", None)
-    if callable(multi):
-        total = 0
-        for chunk in _chunks(list(tickers)):
+
+    for chunk in _chunks(list(tickers)):
+        if callable(multi):
             try:
                 payload = multi(chunk, start, end, interval=REFINEMENT_INTERVAL)
             except Exception as exc:
-                # A batched failure may be one bad symbol or a whole-request
-                # refusal; fall through to the per-symbol path for this chunk.
-                log.warning("batched %s fetch failed (%s)", REFINEMENT_INTERVAL, exc)
+                log.warning("batched %s fetch failed (%s); trying per-symbol", REFINEMENT_INTERVAL, exc)
                 payload = {}
-            for ticker in chunk:
-                bars = payload.get(ticker) or []
-                if not bars:
-                    continue
-                db.query(IntradayBarRow).filter(
-                    IntradayBarRow.ticker == ticker,
-                    IntradayBarRow.interval == REFINEMENT_INTERVAL,
-                    IntradayBarRow.ts >= start,
-                    IntradayBarRow.ts <= end,
-                ).delete(synchronize_session=False)
-                db.add_all(
-                    [
-                        IntradayBarRow(
-                            ticker=ticker,
-                            interval=REFINEMENT_INTERVAL,
-                            ts=b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts,
-                            open=b.open,
-                            high=b.high,
-                            low=b.low,
-                            close=b.close,
-                            volume=b.volume,
-                        )
-                        for b in bars
-                    ]
-                )
-                total += len(bars)
-        db.commit()
-        if total:
-            return total
+        else:
+            payload = {}
 
-    total = 0
-    errors: list[str] = []
-    for ticker in tickers:
-        try:
-            bars = provider.get_intraday_bars(ticker, start, end, interval=REFINEMENT_INTERVAL)
-        except Exception as exc:
-            errors.append(f"{type(exc).__name__}: {exc}"[:200])
-            continue
-        if not bars:
-            errors.append("provider returned no candles")
-            continue
-        db.query(IntradayBarRow).filter(
-            IntradayBarRow.ticker == ticker,
-            IntradayBarRow.interval == REFINEMENT_INTERVAL,
-            IntradayBarRow.ts >= start,
-            IntradayBarRow.ts <= end,
-        ).delete(synchronize_session=False)
-        db.add_all(
-            [
-                IntradayBarRow(
-                    ticker=ticker,
-                    interval=REFINEMENT_INTERVAL,
-                    ts=b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts,
-                    open=b.open,
-                    high=b.high,
-                    low=b.low,
-                    close=b.close,
-                    volume=b.volume,
+        for ticker in chunk:
+            bars = payload.get(ticker) or []
+            if not bars and not callable(multi):
+                try:
+                    bars = provider.get_intraday_bars(
+                        ticker, start, end, interval=REFINEMENT_INTERVAL
+                    )
+                except Exception as exc:
+                    errors.append(f"{type(exc).__name__}: {exc}"[:200])
+                    continue
+            if not bars:
+                errors.append("provider returned no candles")
+                continue
+
+            bars = _dedupe(
+                bars, key=lambda b: b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts
+            )
+            try:
+                total += _replace(
+                    db,
+                    IntradayBarRow,
+                    [
+                        IntradayBarRow.ticker == ticker,
+                        IntradayBarRow.interval == REFINEMENT_INTERVAL,
+                        IntradayBarRow.ts >= start,
+                        IntradayBarRow.ts <= end,
+                    ],
+                    lambda t=ticker, r=bars: _refinement_rows(t, r, REFINEMENT_INTERVAL),
                 )
-                for b in bars
-            ]
-        )
-        total += len(bars)
-        if total % 20000 < len(bars):
-            db.flush()
+            except Exception as exc:
+                errors.append(f"{type(exc).__name__}: {exc}"[:200])
+                continue
+
     db.commit()
 
     if total == 0 and errors:

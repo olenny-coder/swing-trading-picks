@@ -8,7 +8,7 @@ worked. The ingestion then swallowed the rejection and reported "no candles".
 import os
 import sys
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -90,6 +90,92 @@ class TestIntradayFailureReporting(unittest.TestCase):
             data_service.ingest_refinement_bars(
                 self.db, Empty(), ["AAPL"], datetime(2026, 9, 1), datetime(2026, 10, 1)
             )
+
+
+class TestDuplicateCandles(unittest.TestCase):
+    """One duplicate must not poison the whole refresh.
+
+    The observed failure was a UniqueViolation on the intraday unique constraint
+    which left the session in a failed state; every later symbol then reported
+    PendingRollbackError, blaming the 4-hour step for a daily-bar problem.
+    """
+
+    def setUp(self):
+        from app import database
+
+        database.init_db()
+        self.db = database.SessionLocal()
+        self.today = date.today()
+
+    def tearDown(self):
+        self.db.close()
+
+    def _payload(self, ticker, count=20):
+        from app.providers.mock_provider import MockMarketDataProvider
+
+        market = MockMarketDataProvider()
+        return market.get_intraday_bars(
+            ticker,
+            datetime.combine(self.today - timedelta(days=30), time.min),
+            datetime.combine(self.today, time.max),
+        )[:count]
+
+    def test_duplicates_are_collapsed_before_the_insert(self):
+        from app.services import data_service
+
+        bars = self._payload("AAPL")
+
+        class Triplicated:
+            name = "triplicated"
+
+            def get_intraday_bars_multi(self, tickers, start, end, interval="4Hour"):
+                return {"AAPL": bars + bars + bars}
+
+        stored = data_service.ingest_refinement_bars(
+            self.db,
+            Triplicated(),
+            ["AAPL"],
+            datetime.combine(self.today - timedelta(days=30), time.min),
+            datetime.combine(self.today, time.max),
+        )
+        self.assertEqual(stored, len(bars))
+
+    def test_a_collision_is_isolated_to_one_symbol(self):
+        from app.models import IntradayBar as IntradayBarRow
+        from app.services import data_service
+
+        window_start = datetime.combine(self.today - timedelta(days=30), time.min)
+        window_end = datetime.combine(self.today, time.max)
+
+        # A row *outside* the delete window that the payload will try to insert again.
+        outside = window_start - timedelta(hours=1)
+        self.db.add(
+            IntradayBarRow(
+                ticker="AAPL", interval="4Hour", ts=outside,
+                open=1.0, high=1.0, low=1.0, close=1.0, volume=1.0,
+            )
+        )
+        self.db.commit()
+
+        good = self._payload("MSFT")
+        colliding = [
+            type(good[0])(
+                ts=outside, open=2.0, high=2.0, low=2.0, close=2.0, volume=2.0
+            )
+        ] + good
+
+        class Mixed:
+            name = "mixed"
+
+            def get_intraday_bars_multi(self, tickers, start, end, interval="4Hour"):
+                return {"AAPL": colliding, "MSFT": good}
+
+        stored = data_service.ingest_refinement_bars(
+            self.db, Mixed(), ["AAPL", "MSFT"], window_start, window_end
+        )
+        # MSFT still lands; the session survives and stays usable.
+        self.assertGreaterEqual(stored, len(good))
+        self.assertGreater(self.db.query(IntradayBarRow).count(), 1)
 
 
 class TestBatchedRequests(unittest.TestCase):

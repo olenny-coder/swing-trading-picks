@@ -106,11 +106,21 @@ def _ingest_with_fallback(db, sources, ingest, *args) -> tuple[int, str, dict[st
     """
     errors: dict[str, str] = {}
     for provider, name in sources:
+        # Start every attempt from a clean transaction. A source that failed mid-way
+        # leaves the session unusable, and the next step would then report a
+        # PendingRollbackError that belongs to the step before it.
+        try:
+            db.rollback()
+        except Exception:  # pragma: no cover - defensive
+            pass
         try:
             count = ingest(db, provider, *args)
         except Exception as exc:
             errors[name] = f"{type(exc).__name__}: {exc}"[:300]
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception:  # pragma: no cover - defensive
+                pass
             logger.warning("ingestion via %s failed: %s", name, exc)
             continue
         if count:
