@@ -85,6 +85,13 @@ def data_status(db: Session) -> dict:
 
     from ..core.intraday import REFINEMENT_INTERVAL
     from ..models import DailyBar, IntradayBar
+    from . import refresh as refresh_service
+
+    # Why the last refresh could not load something, straight from its own report —
+    # this is the difference between a mystery and an instruction.
+    last_refresh = refresh_service.get_state().get("result") or {}
+    refresh_warnings = list(last_refresh.get("warnings") or [])
+    refresh_errors = last_refresh.get("source_errors") or {}
 
     daily_count = db.query(func.count(DailyBar.id)).scalar() or 0
     daily_latest = db.query(func.max(DailyBar.date)).scalar()
@@ -108,11 +115,16 @@ def data_status(db: Session) -> dict:
         )
     elif refinement_count == 0:
         ready = False
+        detail = "; ".join(
+            f"{name}: {err}" for name, err in (refresh_errors.get("refinement") or {}).items()
+        )
         message = (
             "No 4-hour candles are stored, so the entry, stop and target are being refined "
             "on the daily chart instead and confidence is capped. Press Refresh to load the "
             "4-hour data — this is the normal state straight after an upgrade."
         )
+        if detail:
+            message += f" Last refresh: {detail}."
     else:
         ready = True
         message = (
@@ -128,6 +140,8 @@ def data_status(db: Session) -> dict:
         "refinement_bars": refinement_count,
         "refinement_latest": refinement_latest.isoformat() if refinement_latest else None,
         "message": message,
+        "last_refresh_warnings": refresh_warnings,
+        "last_refresh_errors": refresh_errors,
         "market_day_note": (
             "Analysis always reads the most recent *closed* candle, so a weekend or a "
             "holiday shows the last completed session — it does not blank the screen."
