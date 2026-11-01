@@ -1,22 +1,22 @@
-"""Smart Money Concepts multi-timeframe analysis.
+﻿"""Smart Money Concepts multi-timeframe analysis.
 
 The whole strategy in one place, in two steps:
 
-**Step 1 â€” primary analysis (daily candles).**
+**Step 1 — primary analysis (daily candles).**
 Identify the market structure (bullish or bearish), look for a definitive **Break
 of Structure** in the direction of that trend (a close above a significant prior
 swing high, or below a significant prior swing low), then find the **Fair Value
 Gap** left by the impulse move that broke it. No valid gap relative to the BOS
-means confidence 0 â€” the analysis stops there.
+means confidence 0 — the analysis stops there.
 
-**Step 2 â€” refinement (4-hour candles).**
+**Step 2 — refinement (4-hour candles).**
 Zoom into the daily gap. Entry is the gap's **50% mean threshold**; the stop goes
 beyond the swing point that created the gap, so it sits at a structural
 invalidation rather than at the gap edge where a wick can take it out; the target
 is the next liquidity pool (the nearest swing high or low beyond the entry). The
 trade is only valid at a risk-to-reward of **1:1.6 or better**.
 
-The result renders as the exact plain-text block required by the brief â€” see
+The result renders as the exact plain-text block required by the brief — see
 ``SmcAnalysis.render``. Nothing outside that structure is ever emitted.
 
 Only closed candles are read, so a zone can never appear and then vanish.
@@ -41,7 +41,7 @@ PIVOT_SEARCH = 6
 #: within this many daily candles of the break.
 FVG_IMPULSE_WINDOW = 4
 #: A gap is only consumed once price has traded all the way through it. Partial
-#: mitigation is normal â€” price being inside the zone is the entry condition, not
+#: mitigation is normal — price being inside the zone is the entry condition, not
 #: a reason to discard it.
 FVG_MAX_MITIGATION = 0.99
 #: Minimum risk-to-reward. Below this the answer is "No Trade".
@@ -51,6 +51,9 @@ STOP_BUFFER_ATR = 0.15
 #: Candles needed before either chart can be judged.
 MIN_DAILY_BARS = 60
 MIN_REFINEMENT_BARS = 12
+#: A setup refined on the daily chart instead of the 4-hour one is coarser, so its
+#: confidence is capped below anything the full-fidelity path can produce.
+DAILY_REFINEMENT_CONFIDENCE_CAP = 60.0
 
 BULLISH = "Bullish"
 BEARISH = "Bearish"
@@ -99,6 +102,8 @@ class SmcAnalysis:
     gap: FairValueGap | None = None
     triggered: bool = False
     four_hour_available: bool = False
+    #: Which chart the entry, stop and target were refined on: "4H" or "1D".
+    refinement_timeframe: str = "4H"
     blockers: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     price: float = 0.0
@@ -153,6 +158,7 @@ class SmcAnalysis:
             "tradeable": self.tradeable,
             "triggered": self.triggered,
             "four_hour_available": self.four_hour_available,
+            "refinement_timeframe": self.refinement_timeframe,
             "price": _r(self.price),
             "as_of": self.as_of.isoformat() if self.as_of else None,
             "bos": self.bos.as_dict() if self.bos else None,
@@ -171,7 +177,7 @@ def _atr(bars: list) -> list[float | None]:
 
 
 # ---------------------------------------------------------------------------
-# Step 1 â€” daily structure, BOS and the gap it left
+# Step 1 — daily structure, BOS and the gap it left
 # ---------------------------------------------------------------------------
 def classify_structure(bars: list, swings: SwingPoints) -> str:
     """Bullish / Bearish / Neutral from the swing sequence."""
@@ -232,8 +238,8 @@ def find_gap_for_bos(bars: list, bos: BreakOfStructure, direction: str) -> FairV
 
     The impulse leg runs from the opposing swing that started the move, through the
     swing that was broken, to the candle that broke it. The gap has to have
-    completed somewhere inside that leg â€” that is what makes it *the* gap behind
-    the break rather than an unrelated imbalance that happens to be nearby â€” and it
+    completed somewhere inside that leg — that is what makes it *the* gap behind
+    the break rather than an unrelated imbalance that happens to be nearby — and it
     has to still be a live zone: a gap is only consumed once price has traded all
     the way through it, so a partially filled gap price is sitting inside is
     exactly where an entry belongs.
@@ -266,7 +272,7 @@ def find_gap_for_bos(bars: list, bos: BreakOfStructure, direction: str) -> FairV
 
 
 # ---------------------------------------------------------------------------
-# Step 2 â€” 4-hour refinement
+# Step 2 — 4-hour refinement
 # ---------------------------------------------------------------------------
 def _swing_before(swings: SwingPoints, index: int) -> int | None:
     prior = [i for i in swings.lows if i <= index]
@@ -281,8 +287,22 @@ def refine_on_four_hour(
     gap: FairValueGap,
     min_risk_reward: float = MIN_RISK_REWARD,
 ) -> SmcAnalysis:
-    """Entry at the gap's mean threshold, stop behind the structural swing."""
+    """Entry at the gap's mean threshold, stop behind the structural swing.
+
+    The refinement runs on the 4-hour chart as specified. When no 4-hour candles are
+    stored it degrades to the daily chart rather than refusing outright: the levels
+    are still real structure, just coarser. That degradation is always stated in the
+    Reasoning and it caps the confidence, so a daily-refined setup is never mistaken
+    for a full-fidelity one.
+    """
     bullish = bos.direction == BULLISH
+
+    refined_on = "4H"
+    series = list(four_hour)
+    if len(series) < MIN_REFINEMENT_BARS:
+        refined_on = "1D"
+        series = list(daily)
+
     analysis = SmcAnalysis(
         symbol=symbol,
         trend=bos.direction,
@@ -291,20 +311,27 @@ def refine_on_four_hour(
         gap=gap,
         fvg_low=gap.bottom,
         fvg_high=gap.top,
-        four_hour_available=bool(four_hour),
+        four_hour_available=refined_on == "4H",
+        refinement_timeframe=refined_on,
         as_of=daily[-1].date if daily else None,
         price=daily[-1].close if daily else 0.0,
     )
 
-    if len(four_hour) < MIN_REFINEMENT_BARS:
+    if len(series) < MIN_REFINEMENT_BARS:
         analysis.confidence = 0.0
         analysis.reasoning = (
-            "No Trade â€” the 4-hour refinement chart is unavailable, so the entry, stop and "
-            "risk-to-reward cannot be validated."
+            "No Trade — there are too few candles to place a stop and a target, and no "
+            "4-hour refinement data is stored."
         )
-        analysis.blockers.append("4-hour candles unavailable")
+        analysis.blockers.append("not enough candles to refine on either chart")
         return analysis
 
+    if refined_on == "1D":
+        analysis.blockers.append(
+            "no 4-hour candles stored, so the levels are refined on the daily chart"
+        )
+
+    four_hour = series
     highs = [b.high for b in four_hour]
     lows = [b.low for b in four_hour]
     closes = [b.close for b in four_hour]
@@ -334,7 +361,7 @@ def refine_on_four_hour(
     risk = abs(entry - stop)
     if risk <= 0:
         analysis.confidence = 0.0
-        analysis.reasoning = "No Trade â€” the gap is too narrow to place a stop behind it."
+        analysis.reasoning = "No Trade — the gap is too narrow to place a stop behind it."
         analysis.blockers.append("zero-width risk")
         return analysis
 
@@ -348,7 +375,7 @@ def refine_on_four_hour(
     if target is None:
         analysis.confidence = 0.0
         analysis.reasoning = (
-            "No Trade â€” there is no swing high or low beyond the entry to use as a target."
+            "No Trade — there is no swing high or low beyond the entry to use as a target."
         )
         analysis.blockers.append("no liquidity pool for a target")
         return analysis
@@ -371,13 +398,16 @@ def refine_on_four_hour(
     if rr < min_risk_reward:
         analysis.confidence = 0.0
         analysis.reasoning = (
-            f"No Trade â€” the next liquidity pool at {target:.2f} against a stop at {stop:.2f} "
+            f"No Trade — the next liquidity pool at {target:.2f} against a stop at {stop:.2f} "
             f"gives a risk-to-reward of 1:{rr:.2f}, below the 1:{min_risk_reward:.1f} minimum."
         )
         analysis.blockers.append(f"risk-to-reward 1:{rr:.2f} below 1:{min_risk_reward:.1f}")
         return analysis
 
     analysis.confidence = _confidence(bos, gap, rr, analysis.triggered, four_hour_atr, entry, risk)
+    if refined_on == "1D":
+        # A daily-refined setup is coarser, so it can never score like a 4-hour one.
+        analysis.confidence = min(analysis.confidence, DAILY_REFINEMENT_CONFIDENCE_CAP)
     analysis.reasons = _reasons(bos, gap, rr, analysis.triggered)
     if not analysis.triggered:
         analysis.blockers.append("price has not yet traded back into the gap")
@@ -395,7 +425,7 @@ def next_liquidity_pool(
     """The nearest meaningful swing beyond the entry, across both charts.
 
     "Liquidity" means a confirmed swing point price is likely to reach for. A
-    swing sitting inside the gap â€” or closer than the stop distance â€” is not a
+    swing sitting inside the gap — or closer than the stop distance — is not a
     target, so those are filtered out before the nearest one is chosen.
     """
     pools: list[float] = []
@@ -426,7 +456,7 @@ def _confidence(
     entry: float,
     risk: float,
 ) -> float:
-    """0â€“100, from the confluence the brief asks for."""
+    """0–100, from the confluence the brief asks for."""
     score = 40.0
     # The break itself: decisive closes and fresh breaks score higher.
     score += min(1.0, max(0.0, bos.distance_atr) / 1.5) * 18.0
@@ -469,18 +499,26 @@ def _reasoning(
     bos: BreakOfStructure, gap: FairValueGap, analysis: SmcAnalysis, rr: float
 ) -> str:
     direction = "bullish" if bos.direction == BULLISH else "bearish"
+    on_daily = analysis.refinement_timeframe == "1D"
+    chart = "daily chart" if on_daily else "4-hour chart"
     trigger = (
-        "Price has already traded back into the gap on the 4-hour chart, so the mean "
+        f"Price has already traded back into the gap on the {chart}, so the mean "
         "threshold is the working entry."
         if analysis.triggered
         else "Price has not yet reached the gap; the mean threshold is a resting entry."
+    )
+    caveat = (
+        " No 4-hour candles are stored, so the levels are refined on the daily chart and "
+        "the confidence is capped."
+        if on_daily
+        else ""
     )
     return (
         f"{bos.direction} structure confirmed by a 1D break of structure at {bos.level:.2f}. "
         f"The impulse left a {direction} fair value gap between {gap.bottom:.2f} and "
         f"{gap.top:.2f}. {trigger} Stop sits beyond the structural swing at "
         f"{analysis.stop:.2f} and the first liquidity pool is {analysis.target:.2f}, giving "
-        f"1:{rr:.2f}."
+        f"1:{rr:.2f}.{caveat}"
     )
 
 
@@ -496,7 +534,7 @@ def analyze(
     """Run the full two-step analysis for one symbol.
 
     ``daily`` must be closed daily candles. ``refinement`` must be closed **4-hour**
-    candles â€” Alpaca serves that interval natively, and providers without it return
+    candles — Alpaca serves that interval natively, and providers without it return
     already-aggregated candles, so no resampling happens here.
     """
     symbol = symbol.upper().strip()
@@ -504,7 +542,7 @@ def analyze(
 
     if len(daily) < MIN_DAILY_BARS:
         analysis.reasoning = (
-            f"No Trade â€” only {len(daily)} daily candles are available and at least "
+            f"No Trade — only {len(daily)} daily candles are available and at least "
             f"{MIN_DAILY_BARS} are needed to read structure."
         )
         analysis.blockers.append("insufficient daily history")
@@ -521,7 +559,7 @@ def analyze(
 
     if analysis.trend == NEUTRAL:
         analysis.reasoning = (
-            "No Trade â€” the daily swing structure is unclear, so there is no direction to "
+            "No Trade — the daily swing structure is unclear, so there is no direction to "
             "break in."
         )
         analysis.blockers.append("daily structure unclear")
@@ -530,7 +568,7 @@ def analyze(
     bos = find_bos(daily, swings, analysis.trend, atr_values)
     if bos is None:
         analysis.reasoning = (
-            f"No Trade â€” no definitive 1D break of structure in the {analysis.trend.lower()} "
+            f"No Trade — no definitive 1D break of structure in the {analysis.trend.lower()} "
             "direction within the recent window."
         )
         analysis.blockers.append("no recent 1D break of structure")
@@ -542,7 +580,7 @@ def analyze(
     gap = find_gap_for_bos(daily, bos, analysis.trend)
     if gap is None:
         analysis.reasoning = (
-            f"No Trade â€” the 1D break of structure at {bos.level:.2f} left no valid, "
+            f"No Trade — the 1D break of structure at {bos.level:.2f} left no valid, "
             "unmitigated fair value gap, so there is no zone to trade from."
         )
         analysis.blockers.append("no valid 1D fair value gap behind the break")

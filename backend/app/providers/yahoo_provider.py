@@ -2,7 +2,7 @@
 
 ``YahooMacroProvider`` fetches a real macro snapshot (SPY vs 200-day MA, VIX,
 10-year Treasury yield, sector-ETF relative strength) from Yahoo's public chart
-API using httpx â€” no API key and no third-party dependency (this is the same
+API using httpx — no API key and no third-party dependency (this is the same
 source the ``yfinance`` library wraps).
 
 ``YahooFuturesProvider`` uses the same endpoint to supply daily bars for the
@@ -295,7 +295,7 @@ class YahooFuturesProvider(MarketDataProvider):
 class YahooMarketProvider(MarketDataProvider):
     """Key-free daily and 4-hour candles for US equities, from Yahoo Finance.
 
-    Used as a fallback when the configured market provider cannot serve data â€” an
+    Used as a fallback when the configured market provider cannot serve data — an
     expired key should degrade the app to "real prices from a free source" rather
     than to nothing at all. It is not a substitute for a paid feed: Yahoo's intraday
     history is shallower and its terms are stricter, so it is only ever the second
@@ -340,7 +340,7 @@ class YahooMarketProvider(MarketDataProvider):
         """4-hour candles, aggregated from Yahoo's hourly series.
 
         Yahoo has no native 4-hour interval, so hourly bars are fetched and
-        aggregated â€” the same path a provider without the interval would take.
+        aggregated — the same path a provider without the interval would take.
         """
         from ..core.intraday import resample_intraday
 

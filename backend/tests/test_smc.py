@@ -272,6 +272,65 @@ class TestRefinementRules(unittest.TestCase):
         self.assertGreater(pool, 101.0)
 
 
+class TestMissingRefinementData(unittest.TestCase):
+    """A missing 4-hour chart must degrade, not blank the screen.
+
+    Refining on the daily chart is coarser, so it is always disclosed and its
+    confidence is capped below anything the full-fidelity path can reach.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from app.providers.mock_provider import MockMarketDataProvider
+
+        cls.market = MockMarketDataProvider()
+        cls.today = date.today()
+
+    def _daily(self, ticker="AAPL"):
+        from app.core.fvg import closed_only as closed
+
+        return closed(self.market.get_daily_bars(ticker, self.today - timedelta(days=400), self.today))
+
+    def test_it_refines_on_the_daily_chart_instead_of_refusing(self):
+        from app.core.smc import DAILY_REFINEMENT_CONFIDENCE_CAP
+
+        analysis = analyze("AAPL", self._daily(), [])
+        self.assertEqual(analysis.refinement_timeframe, "1D")
+        self.assertFalse(analysis.four_hour_available)
+        self.assertLessEqual(analysis.confidence, DAILY_REFINEMENT_CONFIDENCE_CAP)
+
+    def test_the_degradation_is_disclosed_in_the_text(self):
+        analysis = analyze("AAPL", self._daily(), [])
+        if not analysis.bos_confirmed or analysis.gap is None:
+            self.skipTest("the synthetic series produced no setup")
+        text = analysis.render()
+        # Still the same eleven-line contract.
+        self.assertEqual(len(text.split("\n")), 11)
+        if analysis.tradeable:
+            self.assertIn("daily chart", analysis.reasoning)
+            self.assertTrue(
+                any("no 4-hour candles" in b for b in analysis.blockers), analysis.blockers
+            )
+
+    def test_a_4h_refinement_is_not_capped_by_the_daily_rule(self):
+        from app.core.smc import DAILY_REFINEMENT_CONFIDENCE_CAP
+
+        bars_4h = self.market.get_intraday_bars(
+            "AAPL",
+            datetime.combine(self.today - timedelta(days=60), datetime.min.time()),
+            datetime.combine(self.today, datetime.max.time()),
+        )
+        analysis = analyze("AAPL", self._daily(), bars_4h)
+        self.assertEqual(analysis.refinement_timeframe, "4H")
+        self.assertTrue(analysis.four_hour_available)
+        if analysis.tradeable:
+            self.assertNotIn(
+                "no 4-hour candles stored", " ".join(analysis.blockers)
+            )
+            # The cap must not bind when the real chart was used.
+            self.assertGreater(analysis.confidence, 0)
+
+
 class TestEndToEndWithMockData(unittest.TestCase):
     """The full pipeline over the synthetic provider must stay coherent."""
 

@@ -302,6 +302,8 @@ export interface SmcResult {
   tradeable: boolean;
   triggered: boolean;
   four_hour_available: boolean;
+  /** Which chart the levels were refined on: "4H" or "1D". */
+  refinement_timeframe?: string;
   price: number | null;
   as_of: string | null;
   bos: Record<string, unknown> | null;

@@ -130,14 +130,25 @@ def _do_refresh(db, user_id: int) -> dict:
     futures_info = data_service.ingest_index_futures(db, start, today)
 
     # 4-hour candles behind the refinement chart — Alpaca serves that interval
-    # natively. Without them the strategy can still read daily structure, but it
-    # will (correctly) refuse to trade because the entry, stop and reward cannot be
-    # validated.
+    # natively. Without them the strategy still runs, but it has to fall back to
+    # refining on the daily chart, which is coarser.
     intraday_start = datetime.combine(today - timedelta(days=INTRADAY_DAYS), dtime.min)
     intraday_end = datetime.combine(today, dtime.max)
     n_intraday, intraday_source = _ingest_with_fallback(
         db, sources, data_service.ingest_refinement_bars, tickers, intraday_start, intraday_end
     )
+
+    warnings: list[str] = []
+    if n_intraday == 0:
+        warnings.append(
+            "No 4-hour candles could be loaded from any source, so setups are being refined "
+            "on the daily chart and confidence is capped. Check the market-data keys under "
+            "Settings."
+        )
+    if n_bars == 0:
+        warnings.append(
+            "No daily bars could be loaded from any source — the scan has nothing to analyse."
+        )
 
     data_service.ingest_macro_events(
         db, macro, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS)
@@ -155,6 +166,7 @@ def _do_refresh(db, user_id: int) -> dict:
         "tickers": len(tickers),
         "bars": n_bars,
         "intraday_bars": n_intraday,
+        "warnings": warnings,
         "futures": futures_info,
         "signal_date": str(data_service.latest_trading_day(db) or today),
         "signals": counts,

@@ -2,7 +2,7 @@
 
 The app's whole job now: read the daily chart for structure, break of structure and
 the fair value gap behind it, then refine the entry on the 4-hour chart. The
-result is the plain-text block from ``SmcAnalysis.render`` â€” that text is the
+result is the plain-text block from ``SmcAnalysis.render`` — that text is the
 product, and the structured fields beside it exist only so the UI can draw the
 chart.
 
@@ -47,9 +47,24 @@ def _daily_bars(db: Session, ticker: str, anchor: date) -> list:
 
 
 def _refinement_bars(db: Session, ticker: str, anchor: date) -> list:
-    """The 4-hour candles behind the refinement step."""
+    """The 4-hour candles behind the refinement step.
+
+    The window is anchored on the latest *daily* bar, which is normally right. If the
+    stored 4-hour candles sit outside it — a stale daily table beside fresh intraday
+    data — a second, today-anchored attempt finds them instead of silently reporting
+    "no 4-hour data" while the rows are sitting right there.
+    """
     start = datetime.combine(anchor - timedelta(days=INTRADAY_WINDOW_DAYS), dtime.min)
     end = datetime.combine(anchor, dtime.max)
+    bars = data_service.load_refinement_bars(db, ticker, start, end)
+    if bars:
+        return bars
+
+    today = date.today()
+    if today == anchor:
+        return []
+    start = datetime.combine(today - timedelta(days=INTRADAY_WINDOW_DAYS), dtime.min)
+    end = datetime.combine(today, dtime.max)
     return data_service.load_refinement_bars(db, ticker, start, end)
 
 
@@ -94,9 +109,9 @@ def data_status(db: Session) -> dict:
     elif refinement_count == 0:
         ready = False
         message = (
-            "Daily prices are stored but there are no 4-hour candles, so the refinement "
-            "step cannot run and every symbol is reported as No Trade. Press Refresh to "
-            "load them — this is the normal state straight after an upgrade."
+            "No 4-hour candles are stored, so the entry, stop and target are being refined "
+            "on the daily chart instead and confidence is capped. Press Refresh to load the "
+            "4-hour data — this is the normal state straight after an upgrade."
         )
     else:
         ready = True

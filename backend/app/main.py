@@ -4,7 +4,7 @@ Run with:  uvicorn app.main:app --reload
 
 The app is a plain ASGI app, so it deploys anywhere. When a static frontend
 build is present (``STATIC_DIR``, default ``static/``) it is served from the same
-origin as the API, which makes the whole product a single service â€” this is how
+origin as the API, which makes the whole product a single service — this is how
 the Render + Neon deployment runs without Vercel.
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ def _seed_in_background() -> None:
     uvicorn binds its port only *after* this lifespan function returns, so a slow
     startup is indistinguishable from a crash: both surface as Render's
     "No open ports detected". Seeding is optional, so it runs on a background
-    thread and a failure is logged rather than fatal â€” a seeding problem must
+    thread and a failure is logged rather than fatal — a seeding problem must
     never stop the service from serving.
     """
     try:
