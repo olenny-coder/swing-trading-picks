@@ -294,6 +294,8 @@ class SmcScanOut(BaseModel):
     refinement_interval: str = "4H"
     intraday_available: bool = False
     results: list[SmcResultOut] = []
+    #: What price data is actually stored, so an empty screen can explain itself.
+    data_status: dict = {}
     demo: bool = False
 
 

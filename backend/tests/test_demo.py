@@ -393,6 +393,23 @@ class TestSmcApi(unittest.TestCase):
             self.assertLessEqual(bar["low"], bar["high"])
         self.assertIn("refinement_bars", detail)
 
+    def test_scan_explains_the_data_state(self):
+        """An empty screen must be able to say why it is empty."""
+        status = self._scan()["data_status"]
+        for key in ("ready", "daily_bars", "refinement_bars", "message", "market_day_note"):
+            self.assertIn(key, status)
+        self.assertTrue(status["ready"])
+        self.assertTrue(status["message"])
+        # The weekend question deserves a straight answer in the payload.
+        self.assertIn("closed", status["market_day_note"])
+
+    def test_health_reports_the_deployed_build(self):
+        body = self.client.get("/api/health").json()
+        self.assertEqual(body["status"], "ok")
+        self.assertIn("version", body)
+        self.assertIn("revision", body)
+        self.assertIn("SMC", body["strategy"])
+
     def test_unknown_symbol_is_404(self):
         self.assertEqual(self.client.get("/api/smc/NOTATICKER").status_code, 404)
 

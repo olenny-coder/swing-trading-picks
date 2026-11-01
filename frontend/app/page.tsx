@@ -226,6 +226,20 @@ export default function HomePage() {
               </span>
             </span>
           </div>
+
+          {/* Say why the screen is empty instead of leaving it a mystery. */}
+          {scan.data_status && (
+            <p
+              className={`mt-2 rounded-lg border px-3 py-2 ${
+                scan.data_status.ready
+                  ? "border-slate-700 bg-slate-950/40 text-slate-400"
+                  : "border-amber-500/40 bg-amber-500/5 text-amber-200"
+              }`}
+            >
+              {scan.data_status.message}
+            </p>
+          )}
+
           <p className="mt-2 text-[11px] text-slate-500">
             A setup is only raised when the 1D break of structure left a valid, unmitigated fair
             value gap and the 4H refinement clears the minimum risk-to-reward. Everything else is
@@ -241,9 +255,13 @@ export default function HomePage() {
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-400">
           <p className="font-medium text-slate-300">No valid signal.</p>
           <p className="mt-1 text-xs">
-            Nothing currently has a confirmed break of structure with a valid fair value gap behind
-            it. Refresh the data, or look again after the next session.
+            {scan.data_status && !scan.data_status.ready
+              ? scan.data_status.message
+              : "Nothing currently has a confirmed break of structure with a valid fair value gap behind it. Press Re-analyse, or refresh the data, and look again after the next session."}
           </p>
+          {scan.data_status?.market_day_note && (
+            <p className="mt-2 text-[11px] text-slate-500">{scan.data_status.market_day_note}</p>
+          )}
         </div>
       )}
 

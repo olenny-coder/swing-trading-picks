@@ -319,6 +319,15 @@ export interface SmcScan {
   refinement_interval: string;
   intraday_available: boolean;
   results: SmcResult[];
+  data_status?: {
+    ready: boolean;
+    daily_bars: number;
+    daily_latest: string | null;
+    refinement_bars: number | null;
+    refinement_latest: string | null;
+    message: string;
+    market_day_note?: string;
+  };
   demo: boolean;
 }
 

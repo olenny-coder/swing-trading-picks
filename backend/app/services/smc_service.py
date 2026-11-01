@@ -1,4 +1,4 @@
-﻿"""SMC analysis service: scan the universe, and drill into one symbol.
+"""SMC analysis service: scan the universe, and drill into one symbol.
 
 The app's whole job now: read the daily chart for structure, break of structure and
 the fair value gap behind it, then refine the entry on the 4-hour chart. The
@@ -58,6 +58,68 @@ def _settings() -> tuple[float, int]:
     return settings.smc_min_risk_reward, settings.smc_max_results
 
 
+def data_status(db: Session) -> dict:
+    """What price data is actually stored, in plain language.
+
+    An empty screen must be able to say *why* it is empty. The two things that
+    silently produce "no trades" are a database with no daily candles and one with
+    no 4-hour candles — the second is normal right after an upgrade, because the
+    refinement table starts empty.
+    """
+    from sqlalchemy import func
+
+    from ..core.intraday import REFINEMENT_INTERVAL
+    from ..models import DailyBar, IntradayBar
+
+    daily_count = db.query(func.count(DailyBar.id)).scalar() or 0
+    daily_latest = db.query(func.max(DailyBar.date)).scalar()
+    refinement_count = (
+        db.query(func.count(IntradayBar.id))
+        .filter(IntradayBar.interval == REFINEMENT_INTERVAL)
+        .scalar()
+        or 0
+    )
+    refinement_latest = (
+        db.query(func.max(IntradayBar.ts))
+        .filter(IntradayBar.interval == REFINEMENT_INTERVAL)
+        .scalar()
+    )
+
+    if daily_count == 0:
+        ready = False
+        message = (
+            "No price data is stored yet. Sign in as an administrator and press Refresh "
+            "to load the market data."
+        )
+    elif refinement_count == 0:
+        ready = False
+        message = (
+            "Daily prices are stored but there are no 4-hour candles, so the refinement "
+            "step cannot run and every symbol is reported as No Trade. Press Refresh to "
+            "load them — this is the normal state straight after an upgrade."
+        )
+    else:
+        ready = True
+        message = (
+            f"Data is loaded: {daily_count:,} daily bars through {daily_latest} and "
+            f"{refinement_count:,} 4-hour candles through "
+            f"{refinement_latest:%Y-%m-%d %H:%M} UTC."
+        )
+
+    return {
+        "ready": ready,
+        "daily_bars": daily_count,
+        "daily_latest": daily_latest.isoformat() if daily_latest else None,
+        "refinement_bars": refinement_count,
+        "refinement_latest": refinement_latest.isoformat() if refinement_latest else None,
+        "message": message,
+        "market_day_note": (
+            "Analysis always reads the most recent *closed* candle, so a weekend or a "
+            "holiday shows the last completed session — it does not blank the screen."
+        ),
+    }
+
+
 def scan(
     db: Session,
     market_provider: MarketDataProvider,
@@ -102,6 +164,7 @@ def scan(
         "refinement_interval": "4H",
         "intraday_available": any(r.four_hour_available for r in results),
         "results": [r.as_dict() for r in selected],
+        "data_status": data_status(db),
         "demo": False,
     }
     with _lock:

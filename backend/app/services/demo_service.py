@@ -488,6 +488,19 @@ def smc_scan_payload(limit: int | None = None) -> dict:
         "refinement_interval": "4H",
         "intraday_available": True,
         "results": ordered[:keep],
+        "data_status": {
+            "ready": True,
+            "daily_bars": len(data["bars_by_ticker"]) * len(next(iter(data["bars_by_ticker"].values()))),
+            "daily_latest": data["generated_at"].isoformat(),
+            "refinement_bars": None,
+            "refinement_latest": data["generated_at"].isoformat(),
+            "message": "Demo dataset: synthetic prices, so the whole pipeline runs with no keys.",
+            "market_day_note": (
+                "Analysis always reads the most recent *closed* candle, so a weekend or a "
+                "holiday shows the last completed session - it does not blank the screen."
+            ),
+            "demo": True,
+        },
         "demo": True,
     }
 
