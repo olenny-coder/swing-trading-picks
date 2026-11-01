@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import type { ChartAnnotation, SmcResult, SmcScan, SmcSymbol } from "@/lib/types";
 import { DemoBanner } from "@/components/DemoBanner";
+import { RefreshButton } from "@/components/RefreshButton";
+import { useAuth } from "@/lib/auth";
 
 const PriceChart = dynamic(() => import("@/components/PriceChart"), { ssr: false });
 
@@ -162,6 +164,7 @@ function levelsFor(detail: SmcSymbol): ChartAnnotation[] {
 }
 
 export default function HomePage() {
+  const { isAdmin } = useAuth();
   const [scan, setScan] = useState<SmcScan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -175,7 +178,9 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     api
-      .smcScan()
+      // A manual reload must bypass the server's short scan cache, otherwise
+      // Re-analyse would keep showing the payload built before the data landed.
+      .smcScan({ refresh: reload > 0 })
       .then(setScan)
       .catch((e) => setError(e instanceof Error ? e.message : "Analysis failed"))
       .finally(() => setLoading(false));
@@ -208,20 +213,26 @@ export default function HomePage() {
             4-hour chart for the entry, stop and target.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setReload((r) => r + 1)}
-          title="Re-runs the analysis over the bars already stored. It does not download new data — use Refresh in the header for that."
-          className="min-h-[44px] self-start rounded-lg border border-slate-700 px-4 text-sm hover:border-slate-600"
-        >
-          ↻ Re-analyse
-        </button>
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          <div className="flex flex-wrap gap-2">
+            {/* Downloading is admin-only and separate from re-analysis. */}
+            {isAdmin && <RefreshButton onDone={() => setReload((r) => r + 1)} />}
+            <button
+              type="button"
+              onClick={() => setReload((r) => r + 1)}
+              title="Re-runs the analysis over the bars already stored. It does not download new data — use Refresh for that."
+              className="min-h-[44px] rounded-lg border border-slate-700 px-4 text-sm hover:border-slate-600"
+            >
+              ↻ Re-analyse
+            </button>
+          </div>
+        </div>
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-500">
-        <strong className="text-slate-400">Re-analyse</strong> re-reads the bars already stored.{" "}
-        <strong className="text-slate-400">Refresh</strong> in the header downloads new data — that is
-        the only thing that can bring in 4-hour candles.
+        <strong className="text-slate-400">Refresh</strong> downloads new market data, including the
+        4-hour candles the refinement needs. <strong className="text-slate-400">Re-analyse</strong>{" "}
+        only re-reads the bars already stored — it cannot fetch data.
       </p>
 
       {scan?.demo && <DemoBanner />}

@@ -437,6 +437,21 @@ class TestSmcApi(unittest.TestCase):
                         offenders.append(f"{name}: {phrase}")
         self.assertEqual(offenders, [], f"stale copy still shipping: {offenders}")
 
+    def test_a_refresh_invalidates_the_scan_cache(self):
+        """Fresh data must not be masked by the cached scan."""
+        import inspect
+
+        from app.services import refresh as refresh_service
+
+        source = inspect.getsource(refresh_service._do_refresh)
+        self.assertIn("clear_cache()", source)
+
+    def test_scan_refresh_parameter_bypasses_the_cache(self):
+        first = self.client.get("/api/smc/scan").json()
+        again = self.client.get("/api/smc/scan?refresh=true").json()
+        self.assertEqual(first["scanned"], again["scanned"])
+        self.assertTrue(again["generated_at"] is not None)
+
     def test_source_probe_requires_admin(self):
         self.assertIn(
             self.client.get("/api/refresh/sources").status_code, (401, 403)

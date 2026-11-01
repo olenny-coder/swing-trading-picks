@@ -263,6 +263,15 @@ def _do_refresh(db, user_id: int) -> dict:
     # Replay older picks so History can show whether they worked out.
     outcomes = outcome_service.update_outcomes(db)
 
+    # New data must not be masked by the scan cache, or the user refreshes and still
+    # sees the payload built from the previous bars.
+    try:
+        from . import smc_service
+
+        smc_service.clear_cache()
+    except Exception:  # pragma: no cover - cache clearing is best-effort
+        logger.warning("could not clear the analysis cache", exc_info=True)
+
     return {
         "provider": bars_source,
         "refinement_source": intraday_source,
