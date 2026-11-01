@@ -418,6 +418,25 @@ class TestSmcApi(unittest.TestCase):
                 self.assertIn("time", bar)
                 self.assertLessEqual(bar["low"], bar["high"])
 
+    def test_the_empty_state_never_claims_daily_refinement(self):
+        """The removed daily fallback must not linger in user-facing copy."""
+        import io as _io
+        import os as _os
+
+        app_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "app")
+        forbidden = ("refined on the daily chart", "daily chart instead", "confidence is capped")
+        offenders = []
+        for root, _dirs, files in _os.walk(app_dir):
+            for name in files:
+                if not name.endswith(".py"):
+                    continue
+                path = _os.path.join(root, name)
+                body = _io.open(path, encoding="utf-8").read()
+                for phrase in forbidden:
+                    if phrase in body:
+                        offenders.append(f"{name}: {phrase}")
+        self.assertEqual(offenders, [], f"stale copy still shipping: {offenders}")
+
     def test_source_probe_requires_admin(self):
         self.assertIn(
             self.client.get("/api/refresh/sources").status_code, (401, 403)

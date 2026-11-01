@@ -190,8 +190,12 @@ export interface RefreshStatus {
   finished_at: string | null;
   result: {
     provider: string;
+    refinement_source?: string;
     tickers: number;
     bars: number;
+    intraday_bars?: number;
+    warnings?: string[];
+    source_errors?: Record<string, Record<string, string>>;
     signal_date: string;
     signals: Record<string, number>;
   } | null;

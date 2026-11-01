@@ -243,8 +243,9 @@ def _do_refresh(db, user_id: int) -> dict:
     if n_intraday == 0:
         detail = "; ".join(f"{name}: {err}" for name, err in intraday_errors.items())
         warnings.append(
-            "No 4-hour candles could be loaded from any source, so setups are being refined "
-            f"on the daily chart and confidence is capped. {detail}".strip()
+            "No 4-hour candles were loaded, so every setup will be reported as No Trade — "
+            "the entry, stop and target cannot be placed accurately without the 4-hour "
+            f"refinement. {detail}".strip()
         )
     if n_bars == 0:
         detail = "; ".join(f"{name}: {err}" for name, err in bars_errors.items())

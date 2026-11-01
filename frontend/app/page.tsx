@@ -211,11 +211,18 @@ export default function HomePage() {
         <button
           type="button"
           onClick={() => setReload((r) => r + 1)}
+          title="Re-runs the analysis over the bars already stored. It does not download new data — use Refresh in the header for that."
           className="min-h-[44px] self-start rounded-lg border border-slate-700 px-4 text-sm hover:border-slate-600"
         >
           ↻ Re-analyse
         </button>
       </div>
+
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        <strong className="text-slate-400">Re-analyse</strong> re-reads the bars already stored.{" "}
+        <strong className="text-slate-400">Refresh</strong> in the header downloads new data — that is
+        the only thing that can bring in 4-hour candles.
+      </p>
 
       {scan?.demo && <DemoBanner />}
 
@@ -273,7 +280,7 @@ export default function HomePage() {
           <p className="mt-1 text-xs">
             {scan.data_status && !scan.data_status.ready
               ? scan.data_status.message
-              : "Nothing currently has a confirmed break of structure with a valid fair value gap behind it. Press Re-analyse, or refresh the data, and look again after the next session."}
+              : "Nothing currently has a confirmed break of structure with a valid fair value gap behind it. Press Re-analyse and look again after the next session — or Refresh if the data is stale."}
           </p>
           {scan.data_status?.market_day_note && (
             <p className="mt-2 text-[11px] text-slate-500">{scan.data_status.market_day_note}</p>

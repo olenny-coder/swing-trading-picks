@@ -119,12 +119,13 @@ def data_status(db: Session) -> dict:
             f"{name}: {err}" for name, err in (refresh_errors.get("refinement") or {}).items()
         )
         message = (
-            "No 4-hour candles are stored, so the entry, stop and target are being refined "
-            "on the daily chart instead and confidence is capped. Press Refresh to load the "
-            "4-hour data — this is the normal state straight after an upgrade."
+            "No 4-hour candles are stored, so every setup is refused: without the 4-hour "
+            "refinement the entry, stop and target cannot be placed accurately. Press "
+            "Refresh to download them. Re-analyse only re-reads the bars already stored — "
+            "it cannot fetch data."
         )
         if detail:
-            message += f" Last refresh: {detail}."
+            message += f" Last refresh error — {detail}."
     else:
         ready = True
         message = (
