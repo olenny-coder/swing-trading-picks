@@ -273,10 +273,11 @@ class TestRefinementRules(unittest.TestCase):
 
 
 class TestMissingRefinementData(unittest.TestCase):
-    """A missing 4-hour chart must degrade, not blank the screen.
+    """Without 4-hour candles the answer is No Trade, not an approximation.
 
-    Refining on the daily chart is coarser, so it is always disclosed and its
-    confidence is capped below anything the full-fidelity path can reach.
+    A daily-chart approximation was tried and removed: placing a 4-hour trigger's
+    stop off daily swings produces levels that are simply wrong, and a wrong entry
+    is worse than no entry.
     """
 
     @classmethod
@@ -291,44 +292,41 @@ class TestMissingRefinementData(unittest.TestCase):
 
         return closed(self.market.get_daily_bars(ticker, self.today - timedelta(days=400), self.today))
 
-    def test_it_refines_on_the_daily_chart_instead_of_refusing(self):
-        from app.core.smc import DAILY_REFINEMENT_CONFIDENCE_CAP
-
+    def test_no_4h_means_no_trade(self):
         analysis = analyze("AAPL", self._daily(), [])
-        self.assertEqual(analysis.refinement_timeframe, "1D")
         self.assertFalse(analysis.four_hour_available)
-        self.assertLessEqual(analysis.confidence, DAILY_REFINEMENT_CONFIDENCE_CAP)
+        self.assertEqual(analysis.confidence, 0.0)
+        self.assertFalse(analysis.tradeable)
+        self.assertEqual(analysis.entry, None)
+        self.assertEqual(analysis.stop, None)
+        self.assertEqual(analysis.target, None)
 
-    def test_the_degradation_is_disclosed_in_the_text(self):
+    def test_the_refusal_says_why_and_stays_in_the_contract(self):
         analysis = analyze("AAPL", self._daily(), [])
-        if not analysis.bos_confirmed or analysis.gap is None:
-            self.skipTest("the synthetic series produced no setup")
+        self.assertTrue(analysis.reasoning.startswith("No Trade"))
+        self.assertIn("4-hour", analysis.reasoning)
         text = analysis.render()
-        # Still the same eleven-line contract.
         self.assertEqual(len(text.split("\n")), 11)
-        if analysis.tradeable:
-            self.assertIn("daily chart", analysis.reasoning)
-            self.assertTrue(
-                any("no 4-hour candles" in b for b in analysis.blockers), analysis.blockers
-            )
+        self.assertIn("No Trade", text)
+        self.assertTrue(any("4-hour" in b for b in analysis.blockers), analysis.blockers)
 
-    def test_a_4h_refinement_is_not_capped_by_the_daily_rule(self):
-        from app.core.smc import DAILY_REFINEMENT_CONFIDENCE_CAP
+    def test_it_never_refines_on_the_daily_chart(self):
+        """Regression guard: the removed fallback must not come back."""
+        analysis = analyze("AAPL", self._daily(), [])
+        self.assertEqual(analysis.refinement_timeframe, "4H")
+        self.assertNotIn("daily chart", analysis.reasoning.lower())
 
+    def test_a_real_4h_series_still_produces_levels(self):
         bars_4h = self.market.get_intraday_bars(
             "AAPL",
             datetime.combine(self.today - timedelta(days=60), datetime.min.time()),
             datetime.combine(self.today, datetime.max.time()),
         )
         analysis = analyze("AAPL", self._daily(), bars_4h)
-        self.assertEqual(analysis.refinement_timeframe, "4H")
         self.assertTrue(analysis.four_hour_available)
         if analysis.tradeable:
-            self.assertNotIn(
-                "no 4-hour candles stored", " ".join(analysis.blockers)
-            )
-            # The cap must not bind when the real chart was used.
-            self.assertGreater(analysis.confidence, 0)
+            for value in (analysis.entry, analysis.stop, analysis.target):
+                self.assertIsNotNone(value)
 
 
 class TestEndToEndWithMockData(unittest.TestCase):

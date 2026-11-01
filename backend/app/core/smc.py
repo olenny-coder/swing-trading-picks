@@ -1,4 +1,4 @@
-﻿"""Smart Money Concepts multi-timeframe analysis.
+"""Smart Money Concepts multi-timeframe analysis.
 
 The whole strategy in one place, in two steps:
 
@@ -51,9 +51,6 @@ STOP_BUFFER_ATR = 0.15
 #: Candles needed before either chart can be judged.
 MIN_DAILY_BARS = 60
 MIN_REFINEMENT_BARS = 12
-#: A setup refined on the daily chart instead of the 4-hour one is coarser, so its
-#: confidence is capped below anything the full-fidelity path can produce.
-DAILY_REFINEMENT_CONFIDENCE_CAP = 60.0
 
 BULLISH = "Bullish"
 BEARISH = "Bearish"
@@ -289,19 +286,13 @@ def refine_on_four_hour(
 ) -> SmcAnalysis:
     """Entry at the gap's mean threshold, stop behind the structural swing.
 
-    The refinement runs on the 4-hour chart as specified. When no 4-hour candles are
-    stored it degrades to the daily chart rather than refusing outright: the levels
-    are still real structure, just coarser. That degradation is always stated in the
-    Reasoning and it caps the confidence, so a daily-refined setup is never mistaken
-    for a full-fidelity one.
+    The refinement runs on the 4-hour chart, and **only** on the 4-hour chart. A
+    daily-chart approximation was tried and removed: using daily swings to place the
+    stop and the target produces levels that are simply wrong for a 4-hour trigger,
+    and a wrong entry is worse than no entry. Without 4-hour candles the answer is
+    No Trade, with the reason stated.
     """
     bullish = bos.direction == BULLISH
-
-    refined_on = "4H"
-    series = list(four_hour)
-    if len(series) < MIN_REFINEMENT_BARS:
-        refined_on = "1D"
-        series = list(daily)
 
     analysis = SmcAnalysis(
         symbol=symbol,
@@ -311,27 +302,23 @@ def refine_on_four_hour(
         gap=gap,
         fvg_low=gap.bottom,
         fvg_high=gap.top,
-        four_hour_available=refined_on == "4H",
-        refinement_timeframe=refined_on,
+        four_hour_available=bool(four_hour) and len(four_hour) >= MIN_REFINEMENT_BARS,
+        refinement_timeframe="4H",
         as_of=daily[-1].date if daily else None,
         price=daily[-1].close if daily else 0.0,
     )
 
-    if len(series) < MIN_REFINEMENT_BARS:
+    if len(four_hour) < MIN_REFINEMENT_BARS:
         analysis.confidence = 0.0
         analysis.reasoning = (
-            "No Trade — there are too few candles to place a stop and a target, and no "
-            "4-hour refinement data is stored."
+            "No Trade — the 4-hour refinement chart is unavailable, so the entry, stop and "
+            "target cannot be placed accurately. Load the 4-hour candles and re-run."
         )
-        analysis.blockers.append("not enough candles to refine on either chart")
+        analysis.blockers.append("4-hour candles unavailable — levels would be inaccurate")
         return analysis
 
-    if refined_on == "1D":
-        analysis.blockers.append(
-            "no 4-hour candles stored, so the levels are refined on the daily chart"
-        )
+    series = four_hour
 
-    four_hour = series
     highs = [b.high for b in four_hour]
     lows = [b.low for b in four_hour]
     closes = [b.close for b in four_hour]
@@ -405,9 +392,6 @@ def refine_on_four_hour(
         return analysis
 
     analysis.confidence = _confidence(bos, gap, rr, analysis.triggered, four_hour_atr, entry, risk)
-    if refined_on == "1D":
-        # A daily-refined setup is coarser, so it can never score like a 4-hour one.
-        analysis.confidence = min(analysis.confidence, DAILY_REFINEMENT_CONFIDENCE_CAP)
     analysis.reasons = _reasons(bos, gap, rr, analysis.triggered)
     if not analysis.triggered:
         analysis.blockers.append("price has not yet traded back into the gap")
@@ -499,20 +483,13 @@ def _reasoning(
     bos: BreakOfStructure, gap: FairValueGap, analysis: SmcAnalysis, rr: float
 ) -> str:
     direction = "bullish" if bos.direction == BULLISH else "bearish"
-    on_daily = analysis.refinement_timeframe == "1D"
-    chart = "daily chart" if on_daily else "4-hour chart"
     trigger = (
-        f"Price has already traded back into the gap on the {chart}, so the mean "
+        "Price has already traded back into the gap on the 4-hour chart, so the mean "
         "threshold is the working entry."
         if analysis.triggered
         else "Price has not yet reached the gap; the mean threshold is a resting entry."
     )
-    caveat = (
-        " No 4-hour candles are stored, so the levels are refined on the daily chart and "
-        "the confidence is capped."
-        if on_daily
-        else ""
-    )
+    caveat = ""
     return (
         f"{bos.direction} structure confirmed by a 1D break of structure at {bos.level:.2f}. "
         f"The impulse left a {direction} fair value gap between {gap.bottom:.2f} and "

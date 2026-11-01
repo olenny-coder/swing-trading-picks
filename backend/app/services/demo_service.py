@@ -533,6 +533,18 @@ def smc_symbol_payload(symbol: str) -> dict | None:
                 for b in daily[-180:]
             ],
             "refinement_bars": bars_to_chart(four_hour[-200:]),
+            "live": {
+                "available": True,
+                "price": out.get("price"),
+                "change_pct": None,
+                "distance_pct": (
+                    round((out["price"] - out["entry"]) / out["entry"] * 100, 2)
+                    if out.get("price") and out.get("entry")
+                    else None
+                ),
+                "in_zone": False,
+                "status": "Demo dataset: the live price is part of the synthetic series.",
+            },
             "demo": True,
         }
     )

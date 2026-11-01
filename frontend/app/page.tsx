@@ -392,6 +392,50 @@ export default function HomePage() {
                 </pre>
               </div>
 
+              {/* Live price versus the entry. Display only: the levels never move. */}
+              {detail.live?.available && (
+                <div
+                  className={`rounded-xl border px-4 py-3 text-xs leading-relaxed ${
+                    detail.live.in_zone
+                      ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-200"
+                      : "border-slate-800 bg-slate-900/60 text-slate-300"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                    <span className="text-[11px] uppercase tracking-wide text-slate-500">
+                      Live price
+                    </span>
+                    <span className="font-mono text-base font-semibold">
+                      {detail.live.price?.toFixed(2)}
+                    </span>
+                    {typeof detail.live.change_pct === "number" && (
+                      <span
+                        className={
+                          detail.live.change_pct >= 0 ? "text-emerald-300" : "text-red-300"
+                        }
+                      >
+                        {detail.live.change_pct >= 0 ? "+" : ""}
+                        {detail.live.change_pct.toFixed(2)}%
+                      </span>
+                    )}
+                    {detail.live.feed && (
+                      <span className="text-[11px] text-slate-500">feed {detail.live.feed}</span>
+                    )}
+                    {typeof detail.live.distance_pct === "number" && (
+                      <span className="text-[11px] text-slate-400">
+                        {detail.live.distance_pct >= 0 ? "+" : ""}
+                        {detail.live.distance_pct.toFixed(2)}% vs entry
+                      </span>
+                    )}
+                  </div>
+                  {detail.live.status && <p className="mt-1">{detail.live.status}</p>}
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    The entry, stop and target above are fixed from closed candles — this price
+                    only tells you how far the market is from the entry.
+                  </p>
+                </div>
+              )}
+
               <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
                 <div className="mb-2 flex items-baseline justify-between gap-2">
                   <h3 className="text-sm font-semibold">Daily structure (1D)</h3>
@@ -427,9 +471,10 @@ export default function HomePage() {
                 </div>
               ) : (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs leading-relaxed text-amber-200">
-                  No 4-hour candles are stored, so these levels were refined on the daily chart and
-                  the confidence is capped at 60. Press <strong>Refresh</strong> to load the 4-hour
-                  data and get the finer trigger.
+                  <strong>No trade.</strong> No 4-hour candles are stored, and the entry, stop
+                  and target are only accurate when placed off the 4-hour refinement chart. Rather
+                  than approximate them off the daily chart, the setup is refused. Press{" "}
+                  <strong>Refresh</strong> once the 4-hour data can load.
                 </div>
               )}
 

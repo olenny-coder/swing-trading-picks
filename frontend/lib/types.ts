@@ -339,5 +339,19 @@ export interface SmcSymbol extends SmcResult {
   timeframe: string;
   daily_bars: BarOut[];
   refinement_bars: { time: string; open: number; high: number; low: number; close: number; volume: number }[];
+  /** Live price context. Display only — the trade levels never move. */
+  live?: {
+    available: boolean;
+    price?: number;
+    change_pct?: number | null;
+    prev_close?: number | null;
+    session_high?: number | null;
+    session_low?: number | null;
+    as_of?: string | null;
+    feed?: string;
+    distance_pct?: number | null;
+    in_zone?: boolean;
+    status?: string;
+  };
   demo: boolean;
 }

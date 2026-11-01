@@ -312,9 +312,18 @@ Zoom into that daily gap on the 4-hour chart:
 | **Validation** | Only a trade at **1:1.6 risk-to-reward or better** |
 
 Four-hour candles come straight from Alpaca, which accepts an `amount + unit` timeframe and therefore
-serves **`4Hour` natively** — no hourly aggregation, and the buckets are the exchange's own. Providers
-without that interval return hourly bars and the app aggregates them, so the refinement chart always
-exists.
+serves **`4Hour` natively** — no hourly aggregation, and the buckets are the exchange's own. The whole
+universe is fetched through the documented multi-symbol endpoint (`/v2/stocks/bars?symbols=…`), so 115
+names cost three requests rather than 115.
+
+**The 4-hour series is mandatory.** Without it there is no trade — no entry, no stop, no target, and a
+`No Trade` verdict naming the reason. An earlier version approximated the levels off the daily chart,
+which was a mistake: a 4-hour trigger's stop belongs beyond the 4-hour swing that created the gap, and
+placing it off daily swings yields levels that look precise and are wrong. A wrong entry is worse than
+no entry, so the app refuses rather than approximates.
+
+The current price is a separate, display-only concern: a single Alpaca snapshot answers *"how far is
+price from my entry right now"* without ever moving the levels, which stay fixed from closed candles.
 
 ### Does it actually find entries?
 

@@ -227,6 +227,7 @@ def drilldown(
             "name": meta.name if meta else None,
             "sector": meta.sector if meta else None,
             "timeframe": "1D structure / 4H refinement",
+            "live": _live_context(market_provider, symbol, payload),
             "daily_bars": [
                 {
                     "date": b.date.isoformat(),
@@ -243,6 +244,62 @@ def drilldown(
         }
     )
     return payload
+
+
+def _live_context(market_provider: MarketDataProvider, symbol: str, payload: dict) -> dict:
+    """Where price is *now* relative to the entry, for display only.
+
+    The trade levels come from closed candles and never move. The snapshot answers
+    the user's next question — "is price near my entry yet?" — and says plainly when
+    a resting entry has already been passed.
+    """
+    snapshot = None
+    try:
+        snapshot = market_provider.get_snapshot(symbol)
+    except Exception:
+        logger.debug("snapshot failed for %s", symbol, exc_info=True)
+
+    entry = payload.get("entry")
+    if not snapshot or not entry:
+        return {"available": False}
+
+    price = snapshot.get("price")
+    distance_pct = None
+    if price and entry:
+        distance_pct = round((price - entry) / entry * 100, 2)
+
+    zone_low = payload.get("fvg_low")
+    zone_high = payload.get("fvg_high")
+    in_zone = bool(
+        price and zone_low is not None and zone_high is not None
+        and min(zone_low, zone_high) <= price <= max(zone_low, zone_high)
+    )
+
+    if in_zone:
+        status = "Price is inside the fair value gap — the entry zone is live."
+    elif distance_pct is not None and distance_pct > 0:
+        status = f"Price is {distance_pct:.2f}% above the entry, waiting for a pullback into the gap."
+    elif distance_pct is not None and distance_pct < 0:
+        status = (
+            f"Price is {abs(distance_pct):.2f}% below the entry — the zone has already been "
+            "traded through on the way here."
+        )
+    else:
+        status = "Live price unavailable."
+
+    return {
+        "available": True,
+        "price": price,
+        "change_pct": snapshot.get("change_pct"),
+        "prev_close": snapshot.get("prev_close"),
+        "session_high": snapshot.get("session_high"),
+        "session_low": snapshot.get("session_low"),
+        "as_of": snapshot.get("as_of"),
+        "feed": snapshot.get("feed"),
+        "distance_pct": distance_pct,
+        "in_zone": in_zone,
+        "status": status,
+    }
 
 
 def clear_cache() -> None:

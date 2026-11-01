@@ -127,6 +127,15 @@ class MarketDataProvider(ABC):
         """
         return []
 
+    def get_snapshot(self, ticker: str) -> dict | None:
+        """Latest price context for one symbol, or ``None`` when unavailable.
+
+        Used for *display only* — "where is price right now relative to the entry".
+        The trade levels themselves always come from closed candles, so a snapshot
+        can never change a signal after the fact.
+        """
+        return None
+
 
 class MacroDataProvider(ABC):
     """Macro / earnings / regime data (Finnhub, Polygon, FRED, or MOCK)."""

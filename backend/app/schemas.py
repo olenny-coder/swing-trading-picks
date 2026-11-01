@@ -302,6 +302,8 @@ class SmcScanOut(BaseModel):
 
 
 class SmcSymbolOut(SmcResultOut):
+    #: Live price context (display only): current price versus the entry zone.
+    live: dict = {}
     """A single symbol, with the candles behind the verdict."""
 
     name: str | None = None

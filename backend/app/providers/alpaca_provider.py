@@ -206,6 +206,45 @@ class AlpacaProvider(MarketDataProvider):
             }
         return {symbol: [_intraday_bar(b) for b in rows] for symbol, rows in payload.items()}
 
+    def get_snapshot(self, ticker: str) -> dict | None:
+        """Latest trade, quote and daily bar for one symbol.
+
+        ``/v2/stocks/{symbol}/snapshot`` returns ``latestTrade``, ``latestQuote``,
+        ``minuteBar``, ``dailyBar`` and ``prevDailyBar``. Only the price context is
+        surfaced: the strategy reads closed candles, so this is display data.
+        """
+        try:
+            data = self._get(
+                _DATA_API, f"/v2/stocks/{ticker}/snapshot", {"feed": self.data_feed}
+            )
+        except Exception:
+            return None
+
+        trade = data.get("latestTrade") or {}
+        daily = data.get("dailyBar") or {}
+        previous = data.get("prevDailyBar") or {}
+
+        price = trade.get("p") or daily.get("c")
+        if price is None:
+            return None
+        price = float(price)
+
+        prev_close = previous.get("c")
+        change_pct = None
+        if prev_close:
+            change_pct = round((price - float(prev_close)) / float(prev_close) * 100, 2)
+
+        return {
+            "price": round(price, 2),
+            "change_pct": change_pct,
+            "as_of": trade.get("t") or daily.get("t"),
+            "session_open": round(float(daily["o"]), 2) if daily.get("o") else None,
+            "session_high": round(float(daily["h"]), 2) if daily.get("h") else None,
+            "session_low": round(float(daily["l"]), 2) if daily.get("l") else None,
+            "prev_close": round(float(prev_close), 2) if prev_close else None,
+            "feed": self.data_feed,
+        }
+
     def get_intraday_bars(
         self, ticker: str, start: datetime, end: datetime, interval: str = "4Hour"
     ) -> list[IntradayBar]:
