@@ -6,6 +6,7 @@ regenerates signals for the most recent completed trading day.
 """
 from __future__ import annotations
 
+import logging
 import threading
 from datetime import date, datetime, time as dtime, timedelta
 
@@ -21,6 +22,8 @@ BAR_HISTORY_DAYS = 2200
 CALENDAR_DAYS = 90
 #: Days of hourly bars pulled for the 4-hour refinement chart.
 INTRADAY_DAYS = get_settings().intraday_days
+
+logger = logging.getLogger("app.refresh")
 
 _lock = threading.Lock()
 _state: dict = {
@@ -72,10 +75,40 @@ def start_refresh(session_factory, user_id: int) -> bool:
     return True
 
 
+def _price_source(db, market):
+    """The configured market provider, plus a key-free Yahoo fallback.
+
+    An expired or rotated key should degrade the app to real prices from a free
+    source rather than to nothing at all.
+    """
+    from ..providers.yahoo_provider import YahooMarketProvider
+
+    return [(market, market.name), (YahooMarketProvider(), "yahoo")]
+
+
+def _ingest_with_fallback(db, sources, ingest, *args) -> tuple[int, str]:
+    """Run an ingestion over the sources in order, using the first that works."""
+    last_error: Exception | None = None
+    for provider, name in sources:
+        try:
+            count = ingest(db, provider, *args)
+        except Exception as exc:
+            last_error = exc
+            db.rollback()
+            logger.warning("ingestion via %s failed: %s", name, exc)
+            continue
+        if count:
+            return count, name
+    if last_error is not None:
+        logger.warning("all data sources failed for this step: %s", last_error)
+    return 0, sources[0][1]
+
+
 def _do_refresh(db, user_id: int) -> dict:
     creds = creds_svc.resolve_credentials(db, user_id)
     market = resolve_market_provider(creds)
     macro = resolve_macro_provider(creds)
+    sources = _price_source(db, market)
 
     universe = data_service.resolve_universe(market)
     tickers = [m.ticker for m in universe]
@@ -90,7 +123,9 @@ def _do_refresh(db, user_id: int) -> dict:
     db.query(EarningsEvent).delete(synchronize_session=False)
     db.commit()
 
-    n_bars = data_service.ingest_bars(db, market, tickers, start, today)
+    n_bars, bars_source = _ingest_with_fallback(
+        db, sources, data_service.ingest_bars, tickers, start, today
+    )
     # Index futures (MES) come from a separate source and are best-effort.
     futures_info = data_service.ingest_index_futures(db, start, today)
 
@@ -100,8 +135,8 @@ def _do_refresh(db, user_id: int) -> dict:
     # validated.
     intraday_start = datetime.combine(today - timedelta(days=INTRADAY_DAYS), dtime.min)
     intraday_end = datetime.combine(today, dtime.max)
-    n_intraday = data_service.ingest_refinement_bars(
-        db, market, tickers, intraday_start, intraday_end
+    n_intraday, intraday_source = _ingest_with_fallback(
+        db, sources, data_service.ingest_refinement_bars, tickers, intraday_start, intraday_end
     )
 
     data_service.ingest_macro_events(
@@ -115,7 +150,8 @@ def _do_refresh(db, user_id: int) -> dict:
     outcomes = outcome_service.update_outcomes(db)
 
     return {
-        "provider": market.name,
+        "provider": bars_source,
+        "refinement_source": intraday_source,
         "tickers": len(tickers),
         "bars": n_bars,
         "intraday_bars": n_intraday,

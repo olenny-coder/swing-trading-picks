@@ -30,12 +30,15 @@ engine = create_engine(
 
 if settings.is_sqlite:
     # WAL mode + a busy timeout let the background refresh thread write while
-    # request threads read/write, avoiding "database is locked" errors.
+    # request threads read/write, avoiding "database is locked" errors. The
+    # timeout is generous because a WAL checkpoint can hold the write lock for a
+    # while on a large database, and the refresh is a long batch job.
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, _record):
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
