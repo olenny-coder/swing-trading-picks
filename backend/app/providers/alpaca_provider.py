@@ -22,6 +22,33 @@ _LIVE_API = "https://api.alpaca.markets"
 _DATA_API = "https://data.alpaca.markets"
 
 
+def _daily_bar(row: dict) -> Bar:
+    """Parse one daily bar from an Alpaca payload."""
+    return Bar(
+        date=date.fromisoformat(row["t"][:10]),
+        open=float(row["o"]),
+        high=float(row["h"]),
+        low=float(row["l"]),
+        close=float(row["c"]),
+        volume=float(row["v"]),
+    )
+
+
+def _intraday_bar(row: dict) -> IntradayBar:
+    """Parse one intraday bar, dropping the trailing Z so it stays naive UTC."""
+    stamp = row["t"]
+    if stamp.endswith("Z"):
+        stamp = stamp[:-1]
+    return IntradayBar(
+        ts=datetime.fromisoformat(stamp),
+        open=float(row["o"]),
+        high=float(row["h"]),
+        low=float(row["l"]),
+        close=float(row["c"]),
+        volume=float(row["v"]),
+    )
+
+
 def _rfc3339(stamp: datetime) -> str:
     """Format a timestamp the way Alpaca's bars endpoint requires.
 
@@ -114,17 +141,70 @@ class AlpacaProvider(MarketDataProvider):
         )
         bars: list[Bar] = []
         for b in data.get("bars", []):
-            bars.append(
-                Bar(
-                    date=date.fromisoformat(b["t"][:10]),
-                    open=float(b["o"]),
-                    high=float(b["h"]),
-                    low=float(b["l"]),
-                    close=float(b["c"]),
-                    volume=float(b["v"]),
-                )
-            )
+            bars.append(_daily_bar(b))
         return bars
+
+    # -- batched endpoints ---------------------------------------------
+    # ``StockBarsRequest`` takes ``symbol_or_symbols``, so the documented way to
+    # pull a whole universe is ONE request carrying a symbol list. Fetching a name
+    # at a time works, but it turns 114 symbols into 114 round trips per timeframe,
+    # which is slow and needlessly rate-limit-hungry.
+    def _multi_bars(
+        self, tickers: list[str], start: str, end: str, timeframe: str
+    ) -> dict[str, list[dict]]:
+        out: dict[str, list[dict]] = {}
+        token: str | None = None
+        for _ in range(4):
+            params = {
+                "symbols": ",".join(tickers),
+                "timeframe": timeframe,
+                "start": start,
+                "end": end,
+                "limit": 10000,
+                "adjustment": "split",
+                "feed": self.data_feed,
+            }
+            if token:
+                params["page_token"] = token
+            data = self._get(_DATA_API, "/v2/stocks/bars", params)
+            for symbol, rows in (data.get("bars") or {}).items():
+                out.setdefault(symbol.upper(), []).extend(rows)
+            token = data.get("next_page_token")
+            if not token:
+                break
+        return out
+
+    def get_daily_bars_multi(
+        self, tickers: list[str], start: date, end: date
+    ) -> dict[str, list[Bar]]:
+        """Daily candles for many symbols in one request."""
+        payload = self._multi_bars(tickers, start.isoformat(), end.isoformat(), "1Day")
+        return {symbol: [_daily_bar(b) for b in rows] for symbol, rows in payload.items()}
+
+    def get_intraday_bars_multi(
+        self, tickers: list[str], start: datetime, end: datetime, interval: str = "4Hour"
+    ) -> dict[str, list[IntradayBar]]:
+        """Intraday candles for many symbols in one request.
+
+        A refused timeframe falls back to hourly and is aggregated per symbol, the
+        same contract as the single-symbol call.
+        """
+        try:
+            payload = self._multi_bars(tickers, _rfc3339(start), _rfc3339(end), interval)
+        except Exception as exc:
+            if interval == "1Hour":
+                raise
+            try:
+                payload = self._multi_bars(tickers, _rfc3339(start), _rfc3339(end), "1Hour")
+            except Exception:
+                raise exc
+            from ..core.intraday import resample_intraday
+
+            return {
+                symbol: resample_intraday([_intraday_bar(b) for b in rows])
+                for symbol, rows in payload.items()
+            }
+        return {symbol: [_intraday_bar(b) for b in rows] for symbol, rows in payload.items()}
 
     def get_intraday_bars(
         self, ticker: str, start: datetime, end: datetime, interval: str = "4Hour"

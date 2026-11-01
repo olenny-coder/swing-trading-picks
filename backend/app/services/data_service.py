@@ -5,6 +5,8 @@ re-run, and macro/earnings rows are upserted by natural key.
 """
 from __future__ import annotations
 
+import logging
+
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import func
@@ -20,6 +22,18 @@ from ..providers.base import (
 )
 
 
+#: Symbols per batched Alpaca request. ``StockBarsRequest`` takes a symbol list, so
+#: one call can serve many names; this keeps the URL comfortably short.
+log = logging.getLogger("app.data")
+
+BATCH_SIZE = 50
+
+
+def _chunks(items: list, size: int = BATCH_SIZE):
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
 def ingest_bars(
     db: Session,
     provider: MarketDataProvider,
@@ -27,7 +41,47 @@ def ingest_bars(
     start: date,
     end: date,
 ) -> int:
-    """Fetch and store daily bars. Returns the number of rows inserted."""
+    """Fetch and store daily bars. Returns the number of rows inserted.
+
+    Uses the provider's batched endpoint when it has one, so a 114-name universe
+    costs a handful of requests instead of 114.
+    """
+    multi = getattr(provider, "get_daily_bars_multi", None)
+    if callable(multi):
+        total = 0
+        for chunk in _chunks(list(tickers)):
+            try:
+                payload = multi(chunk, start, end)
+            except Exception as exc:
+                log.warning("batched daily fetch failed (%s); falling back", exc)
+                payload = {}
+            for ticker in chunk:
+                bars = payload.get(ticker) or []
+                if not bars:
+                    continue
+                db.query(DailyBar).filter(
+                    DailyBar.ticker == ticker,
+                    DailyBar.date >= start,
+                    DailyBar.date <= end,
+                ).delete(synchronize_session=False)
+                db.add_all(
+                    [
+                        DailyBar(
+                            ticker=ticker,
+                            date=b.date,
+                            open=b.open,
+                            high=b.high,
+                            low=b.low,
+                            close=b.close,
+                            volume=b.volume,
+                        )
+                        for b in bars
+                    ]
+                )
+                total += len(bars)
+        db.commit()
+        return total
+
     total = 0
     for ticker in tickers:
         bars = provider.get_daily_bars(ticker, start, end)
@@ -167,6 +221,47 @@ def ingest_refinement_bars(
     from ..core.intraday import REFINEMENT_INTERVAL
     from ..models import IntradayBar as IntradayBarRow
     from ..providers.base import ProviderError
+
+    multi = getattr(provider, "get_intraday_bars_multi", None)
+    if callable(multi):
+        total = 0
+        for chunk in _chunks(list(tickers)):
+            try:
+                payload = multi(chunk, start, end, interval=REFINEMENT_INTERVAL)
+            except Exception as exc:
+                # A batched failure may be one bad symbol or a whole-request
+                # refusal; fall through to the per-symbol path for this chunk.
+                log.warning("batched %s fetch failed (%s)", REFINEMENT_INTERVAL, exc)
+                payload = {}
+            for ticker in chunk:
+                bars = payload.get(ticker) or []
+                if not bars:
+                    continue
+                db.query(IntradayBarRow).filter(
+                    IntradayBarRow.ticker == ticker,
+                    IntradayBarRow.interval == REFINEMENT_INTERVAL,
+                    IntradayBarRow.ts >= start,
+                    IntradayBarRow.ts <= end,
+                ).delete(synchronize_session=False)
+                db.add_all(
+                    [
+                        IntradayBarRow(
+                            ticker=ticker,
+                            interval=REFINEMENT_INTERVAL,
+                            ts=b.ts.replace(tzinfo=None) if b.ts.tzinfo else b.ts,
+                            open=b.open,
+                            high=b.high,
+                            low=b.low,
+                            close=b.close,
+                            volume=b.volume,
+                        )
+                        for b in bars
+                    ]
+                )
+                total += len(bars)
+        db.commit()
+        if total:
+            return total
 
     total = 0
     errors: list[str] = []

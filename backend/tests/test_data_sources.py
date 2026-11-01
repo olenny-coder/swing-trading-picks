@@ -92,5 +92,53 @@ class TestIntradayFailureReporting(unittest.TestCase):
             )
 
 
+class TestBatchedRequests(unittest.TestCase):
+    """The documented request takes a symbol *list*, so one call serves many names."""
+
+    def test_chunking_covers_everything_exactly_once(self):
+        from app.services.data_service import BATCH_SIZE, _chunks
+
+        tickers = [f"T{i}" for i in range(120)]
+        chunks = list(_chunks(tickers, 50))
+        self.assertEqual([len(c) for c in chunks], [50, 50, 20])
+        self.assertEqual(sum(chunks, []), tickers)
+        self.assertEqual(BATCH_SIZE, 50)
+
+    def test_multi_payload_is_parsed_per_symbol(self):
+        from app.providers.alpaca_provider import _daily_bar, _intraday_bar
+
+        payload = {
+            "bars": {
+                "AAPL": [
+                    {"t": "2026-09-01T04:00:00Z", "o": 100, "h": 105, "l": 99, "c": 104, "v": 1000}
+                ],
+                "MSFT": [
+                    {"t": "2026-09-01T04:00:00Z", "o": 200, "h": 205, "l": 199, "c": 204, "v": 2000}
+                ],
+            }
+        }
+        rows = {symbol: [_daily_bar(b) for b in bars] for symbol, bars in payload["bars"].items()}
+        self.assertEqual(set(rows), {"AAPL", "MSFT"})
+        self.assertEqual(rows["AAPL"][0].date, date(2026, 9, 1))
+        self.assertEqual(rows["MSFT"][0].close, 204.0)
+
+        intraday = _intraday_bar(payload["bars"]["AAPL"][0])
+        self.assertEqual(intraday.ts, datetime(2026, 9, 1, 4, 0))
+        self.assertIsNone(intraday.ts.tzinfo)
+
+    def test_the_batched_symbols_parameter_is_a_list(self):
+        """Guard the documented contract: symbol_or_symbols, not one symbol."""
+        import inspect
+
+        from app.providers.alpaca_provider import AlpacaProvider
+
+        self.assertTrue(hasattr(AlpacaProvider, "get_daily_bars_multi"))
+        signature = inspect.signature(AlpacaProvider.get_daily_bars_multi)
+        self.assertIn("tickers", signature.parameters)
+        source = inspect.getsource(AlpacaProvider._multi_bars)
+        self.assertIn('"symbols": ",".join(tickers)', source)
+        self.assertIn("/v2/stocks/bars", source)
+
+
 if __name__ == "__main__":
     unittest.main()
