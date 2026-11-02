@@ -272,6 +272,60 @@ class TestRefinementRules(unittest.TestCase):
         self.assertGreater(pool, 101.0)
 
 
+class TestConfidenceBreakdown(unittest.TestCase):
+    """The score must be explainable: base plus named factors, summing to it."""
+
+    def test_the_parts_add_up_to_the_score(self):
+        from app.core.smc import CONFIDENCE_BASE, CONFIDENCE_FACTORS
+
+        analysis = _tradeable_analysis()
+        parts = analysis.confidence_components
+        self.assertEqual(set(parts), set(CONFIDENCE_FACTORS))
+        total = CONFIDENCE_BASE + sum(parts.values())
+        self.assertAlmostEqual(round(total), round(analysis.confidence), delta=1)
+
+    def test_every_factor_has_a_description(self):
+        from app.core.smc import CONFIDENCE_FACTORS
+
+        for name, label in CONFIDENCE_FACTORS.items():
+            self.assertTrue(label, f"{name} needs a description")
+
+    def test_the_breakdown_reaches_the_payload(self):
+        analysis = _tradeable_analysis()
+        payload = analysis.as_dict()
+        self.assertIn("confidence_components", payload)
+        self.assertIn("confidence_base", payload)
+        self.assertTrue(payload["confidence_components"])
+
+    def test_a_triggered_gap_scores_the_trigger_factor(self):
+        analysis = _tradeable_analysis()
+        if not analysis.triggered:
+            self.skipTest("the synthetic setup was not triggered")
+        self.assertGreater(analysis.confidence_components["trigger"], 0)
+
+
+def _tradeable_analysis():
+    """A real analysis from the synthetic universe, for the assertions above."""
+    from app.core.fvg import closed_only
+    from app.providers.mock_provider import MockMarketDataProvider
+
+    market = MockMarketDataProvider()
+    today = date.today()
+    for ticker in ("AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "JPM", "XOM", "CVX"):
+        daily = closed_only(
+            market.get_daily_bars(ticker, today - timedelta(days=400), today)
+        )
+        bars_4h = market.get_intraday_bars(
+            ticker,
+            datetime.combine(today - timedelta(days=60), datetime.min.time()),
+            datetime.combine(today, datetime.max.time()),
+        )
+        analysis = analyze(ticker, daily, bars_4h)
+        if analysis.tradeable:
+            return analysis
+    raise unittest.SkipTest("no synthetic ticker produced a tradeable setup")
+
+
 class TestMissingRefinementData(unittest.TestCase):
     """Without 4-hour candles the answer is No Trade, not an approximation.
 

@@ -394,7 +394,15 @@ def persist_picks(
             "earnings_in_days": earnings_in_days,
             "high_importance_count": sum(1 for f in todo if f["importance"] == "high"),
         }
+        # Store the real breakdown, so History can explain the score rather than
+        # show the retired engine's continuation/reversal split.
+        from ..core.smc import CONFIDENCE_BASE, CONFIDENCE_FACTORS
+
         row.confidence_components = {
+            "model": "SMC",
+            "base": CONFIDENCE_BASE,
+            "parts": result.confidence_components,
+            "factors": CONFIDENCE_FACTORS,
             "risk_reward": result.risk_reward,
             "bos_level": result.bos.level if result.bos else None,
             "gap": result.gap.as_dict() if result.gap else None,

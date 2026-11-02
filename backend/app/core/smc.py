@@ -101,6 +101,8 @@ class SmcAnalysis:
     four_hour_available: bool = False
     #: Which chart the entry, stop and target were refined on: "4H" or "1D".
     refinement_timeframe: str = "4H"
+    #: The confidence score broken into the factors that produced it.
+    confidence_components: dict = field(default_factory=dict)
     blockers: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     price: float = 0.0
@@ -156,6 +158,8 @@ class SmcAnalysis:
             "triggered": self.triggered,
             "four_hour_available": self.four_hour_available,
             "refinement_timeframe": self.refinement_timeframe,
+            "confidence_components": self.confidence_components,
+            "confidence_base": CONFIDENCE_BASE,
             "price": _r(self.price),
             "as_of": self.as_of.isoformat() if self.as_of else None,
             "bos": self.bos.as_dict() if self.bos else None,
@@ -392,6 +396,9 @@ def refine_on_four_hour(
         return analysis
 
     analysis.confidence = _confidence(bos, gap, rr, analysis.triggered, four_hour_atr, entry, risk)
+    analysis.confidence_components = confidence_parts(
+        bos, gap, rr, analysis.triggered, four_hour_atr, entry, risk
+    )
     analysis.reasons = _reasons(bos, gap, rr, analysis.triggered)
     if not analysis.triggered:
         analysis.blockers.append("price has not yet traded back into the gap")
@@ -431,6 +438,42 @@ def next_liquidity_pool(
 # ---------------------------------------------------------------------------
 # Scoring and prose
 # ---------------------------------------------------------------------------
+#: The confidence model, as named parts. Each factor contributes points and the
+#: total is the score. Exposing the parts is what lets the UI explain a number
+#: instead of merely printing it.
+CONFIDENCE_BASE = 40.0
+
+CONFIDENCE_FACTORS: dict[str, str] = {
+    "bos": "Break of structure depth — how far the close ran beyond the swing, in ATRs",
+    "gap_displacement": "Fair value gap displacement — how violent the impulse was, in ATRs",
+    "gap_freshness": "How unmitigated the gap still is (a fully traded-through gap scores nothing)",
+    "trigger": "Price has traded back into the gap on the 4-hour chart",
+    "reward": "Risk-to-reward above the 1:1.6 minimum",
+    "stop_distance": "The stop sits at least half a 4-hour ATR away, not a hair-trigger",
+}
+
+
+def confidence_parts(
+    bos: BreakOfStructure,
+    gap: FairValueGap,
+    rr: float,
+    triggered: bool,
+    four_hour_atr: float,
+    entry: float,
+    risk: float,
+) -> dict[str, float]:
+    """The score, broken into the factors that produced it."""
+    parts = {
+        "bos": min(1.0, max(0.0, bos.distance_atr) / 1.5) * 18.0,
+        "gap_displacement": min(1.0, gap.displacement_atr / 2.5) * 14.0,
+        "gap_freshness": max(0.0, 1.0 - gap.mitigation / FVG_MAX_MITIGATION) * 10.0,
+        "trigger": 12.0 if triggered else 0.0,
+        "reward": min(1.0, max(0.0, (rr - MIN_RISK_REWARD) / 2.0)) * 16.0,
+        "stop_distance": 4.0 if four_hour_atr > 0 and risk >= 0.5 * four_hour_atr else 0.0,
+    }
+    return {name: round(points, 1) for name, points in parts.items()}
+
+
 def _confidence(
     bos: BreakOfStructure,
     gap: FairValueGap,
@@ -440,23 +483,13 @@ def _confidence(
     entry: float,
     risk: float,
 ) -> float:
-    """0–100, from the confluence the brief asks for."""
-    score = 40.0
-    # The break itself: decisive closes and fresh breaks score higher.
-    score += min(1.0, max(0.0, bos.distance_atr) / 1.5) * 18.0
-    # The gap: a violent impulse leaves a wide, obviously unfair zone.
-    score += min(1.0, gap.displacement_atr / 2.5) * 14.0
-    score += max(0.0, 1.0 - gap.mitigation / FVG_MAX_MITIGATION) * 10.0
-    # A 4-hour reaction inside the zone is the entry trigger.
-    score += 12.0 if triggered else 0.0
-    # Reward quality above the minimum.
-    score += min(1.0, max(0.0, (rr - MIN_RISK_REWARD) / 2.0)) * 16.0
-    # Prefer a stop that is a sensible distance away, not a hair-trigger.
-    if four_hour_atr > 0:
-        score += 4.0 if risk >= 0.5 * four_hour_atr else 0.0
-    # The score is reported as a whole number, so round it here: the plain-text
-    # block and the structured field then render from exactly the same value.
-    return float(max(0, min(100, round(score))))
+    """0-100, from the confluence the brief asks for.
+
+    A base plus the sum of the named parts. Rounded to a whole number here so the
+    plain-text block and the structured field render from exactly the same value.
+    """
+    parts = confidence_parts(bos, gap, rr, triggered, four_hour_atr, entry, risk)
+    return float(max(0, min(100, round(CONFIDENCE_BASE + sum(parts.values())))))
 
 
 def _reasons(

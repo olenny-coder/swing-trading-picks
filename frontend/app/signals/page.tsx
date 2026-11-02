@@ -78,6 +78,69 @@ function FactorList({
   );
 }
 
+/** The screener's confidence model: a base plus named factors. */
+function SmcConfidenceDerivation({
+  components,
+  confidence,
+}: {
+  components: Record<string, unknown>;
+  confidence: number;
+}) {
+  const base = Number(components.base ?? 40);
+  const parts = (components.parts ?? {}) as Record<string, number>;
+  const factors = (components.factors ?? {}) as Record<string, string>;
+  const total = Object.values(parts).reduce((sum, value) => sum + (value ?? 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm leading-relaxed text-slate-400">
+        This is an <strong className="text-slate-200">SMC</strong> pick, so the score is not a
+        continuation/reversal blend. It starts from a base of{" "}
+        <span className="font-mono text-slate-200">{base}</span> points and each factor below adds
+        to it, up to a maximum of 100.
+      </p>
+
+      <ul className="space-y-2 text-xs">
+        <li className="flex flex-wrap items-baseline gap-x-2 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2">
+          <span className="min-w-0 flex-1 basis-full leading-relaxed text-slate-400 sm:basis-0">
+            Base score — a valid break of structure with a fair value gap behind it
+          </span>
+          <span className="font-mono font-semibold text-slate-300">{base}</span>
+        </li>
+        {Object.entries(parts).map(([key, points]) => (
+          <li
+            key={key}
+            className="flex flex-wrap items-baseline gap-x-2 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2"
+          >
+            <span className="min-w-0 flex-1 basis-full leading-relaxed text-slate-400 sm:basis-0">
+              {factors[key] ?? key}
+            </span>
+            <span
+              className={`font-mono font-semibold ${points > 0 ? "text-emerald-300" : "text-slate-500"}`}
+            >
+              {points > 0 ? `+${points}` : "0"}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm">
+        <span className="text-slate-300">
+          Base {base} + factors {total.toFixed(1)}
+        </span>
+        <span className="font-mono text-lg font-semibold text-emerald-300">{Math.round(confidence)}</span>
+      </div>
+
+      <p className="text-xs leading-relaxed text-slate-500">
+        A factor scoring zero means that part of the setup was absent or weak — for example a gap
+        that price has already traded fully through, or a stop so tight it sits inside a single
+        4-hour bar&apos;s range. Nothing here is adjusted after the fact: the score is fixed from
+        closed candles when the pick is raised.
+      </p>
+    </div>
+  );
+}
+
 function ConfidenceDerivation({
   components,
   confidence,
@@ -309,6 +372,10 @@ function SignalDetail() {
   const s = data.signal;
   const flags = (s.event_flags ?? {}) as Record<string, unknown>;
   const components = (s.confidence_components ?? {}) as Record<string, number>;
+  const rawComponents = (s.confidence_components ?? {}) as Record<string, unknown>;
+  // SMC picks store {model, base, parts, factors}; the retired engine stored a flat
+  // set of factor_* keys. The panel must follow whichever produced the pick.
+  const isSmc = s.setup === "SMC" || rawComponents.model === "SMC";
 
   // ``annotation`` holds two different things: the LLM research note (which has a
   // sentiment) or the screener's own verdict (which has text/reasoning). Reading
@@ -627,8 +694,18 @@ function SignalDetail() {
         </div>
       </Collapsible>
 
-      <Collapsible title="How confidence was derived" subtitle="weighted sub-score math">
-        <ConfidenceDerivation components={components} confidence={s.confidence} />
+      {/* The screener and the retired SMA engine scored confidence differently, so
+          the explanation has to follow the model that actually produced the pick. */}
+      <Collapsible
+        title="How confidence was derived"
+        subtitle={isSmc ? "base score plus SMC factors" : "weighted sub-score math"}
+        defaultOpen={isSmc}
+      >
+        {isSmc ? (
+          <SmcConfidenceDerivation components={rawComponents} confidence={s.confidence} />
+        ) : (
+          <ConfidenceDerivation components={components} confidence={s.confidence} />
+        )}
       </Collapsible>
     </div>
   );
