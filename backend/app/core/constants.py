@@ -6,32 +6,32 @@ SIGNAL_BUY = "BUY"
 SIGNAL_SELL = "SELL"
 SIGNAL_TYPES = (SIGNAL_BUY, SIGNAL_SELL)
 
-# --- Setups (SMA 20/50 flow system) -----------------------------------------
-SETUP_UC1 = "UC1"  # bullish continuation, shallow pullback
-SETUP_UC2 = "UC2"  # bullish continuation, deeper pullback
-SETUP_DC1 = "DC1"  # bearish continuation, shallow pullback
-SETUP_DC2 = "DC2"  # bearish continuation, deeper pullback
-SETUP_UR1 = "UR1"  # early upside reversal off a downside flush
-SETUP_DR1 = "DR1"  # early downside reversal off a majority flush
-SETUP_UR2 = "UR2"  # double-top reversal (bearish)
-SETUP_DR2 = "DR2"  # double-bottom reversal (bullish)
-
-#: The live strategy: a 1D break of structure with a fair value gap behind it,
-#: refined on the 4-hour chart. Picks are stored under this setup so History shows
-#: exactly what the screener raised.
+# --- Setups -----------------------------------------------------------------
+#: The only strategy the app runs: a 1D break of structure with a fair value gap
+#: behind it, refined on the 4-hour chart. Picks are stored under this setup, so
+#: History is exactly what the screener raised.
 SETUP_SMC = "SMC"
 
-SETUPS = (
-    SETUP_SMC,
-    SETUP_UC1, SETUP_UC2, SETUP_DC1, SETUP_DC2,
-    SETUP_UR1, SETUP_DR1, SETUP_UR2, SETUP_DR2,
-)
+#: The SMA 20/50 flow-system codes (UC1/DC1/UR1/DR1 …) were retired with that
+#: engine. They are not listed, filtered on, or counted anywhere any more — the
+#: four names below exist only so the retired ``sma_strategy`` module still imports.
+SETUP_UC1 = "UC1"
+SETUP_UC2 = "UC2"
+SETUP_DC1 = "DC1"
+SETUP_DC2 = "DC2"
+SETUP_UR1 = "UR1"
+SETUP_DR1 = "DR1"
+SETUP_UR2 = "UR2"
+SETUP_DR2 = "DR2"
 
-CONTINUATION_SETUPS = (SETUP_UC1, SETUP_UC2, SETUP_DC1, SETUP_DC2)
-REVERSAL_SETUPS = (SETUP_UR1, SETUP_DR1, SETUP_UR2, SETUP_DR2)
+SETUPS = (SETUP_SMC,)
 
+CONTINUATION_SETUPS: tuple[str, ...] = ()
+REVERSAL_SETUPS: tuple[str, ...] = ()
+
+#: Only the retired SMA engine reads this; SMC direction comes from the break of
+#: structure, per pick.
 DIRECTION_BY_SETUP: dict[str, str] = {
-    # Direction is decided per pick for SMC (the break of structure sets it).
     SETUP_UC1: SIGNAL_BUY,
     SETUP_UC2: SIGNAL_BUY,
     SETUP_DC1: SIGNAL_SELL,
@@ -43,14 +43,7 @@ DIRECTION_BY_SETUP: dict[str, str] = {
 }
 
 SETUP_LABELS: dict[str, str] = {
-    SETUP_UC1: "Bullish continuation (shallow pullback)",
-    SETUP_UC2: "Bullish continuation (deep pullback)",
-    SETUP_DC1: "Bearish continuation (shallow pullback)",
-    SETUP_DC2: "Bearish continuation (deep pullback)",
-    SETUP_UR1: "Early upside reversal",
-    SETUP_DR1: "Early downside reversal",
-    SETUP_UR2: "Double-top reversal",
-    SETUP_DR2: "Double-bottom reversal",
+    SETUP_SMC: "SMC — 1D break of structure + fair value gap, 4H refinement",
 }
 
 # Values used by releases before the SMA-20/50 setup engine (DB migration only).

@@ -4,13 +4,13 @@ runs against a database configured for real market data."""
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from .database import SessionLocal
 from .models import Signal
 from .providers.registry import resolve_macro_provider, resolve_market_provider
 from .services import credentials as creds_svc
-from .services import data_service, signal_service
+from .services import data_service, smc_service
 
 logger = logging.getLogger("app.seed")
 
@@ -32,13 +32,28 @@ def seed_demo(signal_date: date | None = None) -> dict:
         bar_start = signal_date - timedelta(days=BAR_HISTORY_DAYS)
         data_service.ingest_bars(db, market, tickers, bar_start, signal_date)
 
+        # The screener needs the 4-hour series too; without it every symbol is
+        # refused and the seeded demo would have nothing to show.
+        data_service.ingest_refinement_bars(
+            db,
+            market,
+            tickers,
+            datetime.combine(signal_date - timedelta(days=60), time.min),
+            datetime.combine(signal_date, time.max),
+        )
+
         cal_start = signal_date - timedelta(days=15)
         cal_end = signal_date + timedelta(days=CALENDAR_DAYS)
         data_service.ingest_macro_events(db, macro, cal_start, cal_end)
         data_service.ingest_earnings(db, macro, tickers, cal_start, cal_end)
 
-        counts = signal_service.generate_signals(db, market, macro, signal_date)
-        return counts
+        # Seed the same way a real refresh ends: run the screener and store its
+        # picks. The retired SMA engine no longer produces signals anywhere.
+        screen = smc_service.scan(db, market, limit=None, refresh=True)
+        return {
+            "picks": screen.get("tradeable", 0),
+            "screened": screen.get("scanned", 0),
+        }
     finally:
         db.close()
 

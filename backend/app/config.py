@@ -1,4 +1,4 @@
-"""Application configuration loaded from environment / .env file."""
+﻿"""Application configuration loaded from environment / .env file."""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     #: Minimum risk-to-reward. Below this the answer is "No Trade".
     smc_min_risk_reward: float = 1.6
     #: Maximum rows returned by a scan.
-    smc_max_results: int = 20
+    smc_max_results: int = 5
     #: Days of hourly bars pulled for the 4-hour refinement chart.
     intraday_days: int = 60
 

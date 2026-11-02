@@ -59,26 +59,13 @@ export interface AccuracyResponse {
   by_setup: SetupAccuracy[];
 }
 
-/** The live strategy first, then the retired SMA 20/50 flow-system setups. */
-export type SetupCode =
-  | "SMC"
-  | "UC1" | "UC2" | "DC1" | "DC2" | "UR1" | "DR1" | "UR2" | "DR2";
+/** The one strategy the app runs. The retired SMA setup codes are gone. */
+export type SetupCode = "SMC";
 
-export const SETUP_CODES: SetupCode[] = [
-  "SMC",
-  "UC1", "UC2", "DC1", "DC2", "UR1", "DR1", "UR2", "DR2",
-];
+export const SETUP_CODES: SetupCode[] = ["SMC"];
 
 export const SETUP_LABELS: Record<SetupCode, string> = {
   SMC: "SMC — 1D break of structure + fair value gap, 4H refinement",
-  UC1: "Bullish continuation (shallow pullback)",
-  UC2: "Bullish continuation (deep pullback)",
-  DC1: "Bearish continuation (shallow pullback)",
-  DC2: "Bearish continuation (deep pullback)",
-  UR1: "Early upside reversal",
-  DR1: "Early downside reversal",
-  UR2: "Double-top reversal",
-  DR2: "Double-bottom reversal",
 };
 
 export interface SignalOut {

@@ -90,16 +90,9 @@ export function Filters({
           >
             <option value="">All</option>
             <optgroup label="Continuation">
-              <option value="UC1">UC1 — Bullish continuation</option>
-              <option value="UC2">UC2 — Bullish continuation (deep)</option>
-              <option value="DC1">DC1 — Bearish continuation</option>
-              <option value="DC2">DC2 — Bearish continuation (deep)</option>
+              <option value="SMC">SMC — 1D break of structure + fair value gap</option>
             </optgroup>
             <optgroup label="Reversal">
-              <option value="UR1">UR1 — Early upside reversal</option>
-              <option value="DR1">DR1 — Early downside reversal</option>
-              <option value="UR2">UR2 — Double top</option>
-              <option value="DR2">DR2 — Double bottom</option>
             </optgroup>
           </select>
         </label>

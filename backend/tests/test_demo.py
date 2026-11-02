@@ -74,10 +74,20 @@ class TestTimeframeFiltering(unittest.TestCase):
                 self.assertEqual(signal["timeframe"], timeframe)
 
     def test_setup_filter_is_applied(self):
-        body = self.client.get("/api/signals", params=self._params("DAILY", "DC1")).json()
-        self.assertTrue(body["signals"], "the demo should contain DC1 picks")
-        for signal in body["signals"]:
-            self.assertEqual(signal["setup"], "DC1")
+        """Only the live setup exists now, so filtering by it returns the picks."""
+        body = self.client.get("/api/signals", params={"setup": "SMC"}).json()
+        self.assertTrue(body["signals"], "the demo should contain SMC picks")
+        for row in body["signals"]:
+            self.assertEqual(row["setup"], "SMC")
+
+    def test_retired_sma_setups_are_gone(self):
+        """DC1/UC1 and friends must not be published anywhere any more."""
+        body = self.client.get("/api/signals", params={"limit": 100}).json()
+        retired = {"UC1", "UC2", "DC1", "DC2", "UR1", "DR1", "UR2", "DR2"}
+        found = {row["setup"] for row in body["signals"]} & retired
+        self.assertEqual(found, set(), f"retired setups still published: {found}")
+        for row in body["signals"]:
+            self.assertEqual(row["setup"], "SMC")
 
     def test_an_unknown_interval_falls_back_to_daily(self):
         body = self.client.get("/api/signals/daily", params=self._params("FORTNIGHTLY")).json()

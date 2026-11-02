@@ -24,6 +24,7 @@ from ..core.constants import (
     CONTINUATION_SETUPS,
     REVERSAL_SETUPS,
     SETUPS,
+    SETUP_SMC,
     SIGNAL_BUY,
     SIGNAL_SELL,
 )
@@ -86,7 +87,9 @@ def _to_signal(draft, timeframe: str, candle_date: date, signal_id: int) -> dict
         "name": draft.name,
         "date": candle_date,
         "type": draft.direction,
-        "setup": draft.setup,
+        # The demo used to publish the retired SMA setup codes (UC1/DC1 …). History
+        # must show one strategy, so demo rows carry the live setup.
+        "setup": SETUP_SMC,
         "timeframe": timeframe,
         "entry": draft.entry,
         "target": draft.target,

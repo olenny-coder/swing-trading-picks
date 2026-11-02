@@ -26,14 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .core.constants import (
     SETUPS,
-    SETUP_DC1,
-    SETUP_DC2,
-    SETUP_DR1,
-    SETUP_DR2,
-    SETUP_UC1,
-    SETUP_UC2,
-    SETUP_UR1,
-    SETUP_UR2,
+    SETUP_SMC,
     SIGNAL_BUY,
     SIGNAL_SELL,
     SIGNAL_TYPES,
@@ -46,14 +39,7 @@ __all__ = [
     "SIGNAL_SELL",
     "SIGNAL_TYPES",
     "SETUPS",
-    "SETUP_UC1",
-    "SETUP_UC2",
-    "SETUP_DC1",
-    "SETUP_DC2",
-    "SETUP_UR1",
-    "SETUP_DR1",
-    "SETUP_UR2",
-    "SETUP_DR2",
+    "SETUP_SMC",
 ]
 
 

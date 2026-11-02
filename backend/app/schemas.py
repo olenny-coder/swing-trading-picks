@@ -100,7 +100,7 @@ class SignalOut(BaseModel):
     name: str | None = None
     date: date
     type: str  # BUY | SELL
-    setup: str  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2
+    setup: str  # SMC (the retired SMA setup codes are gone)
     timeframe: str = "DAILY"  # DAILY | WEEKLY | MONTHLY
     entry: float
     target: float
@@ -122,7 +122,7 @@ class SignalOut(BaseModel):
 
 class SignalFilters(BaseModel):
     type: str | None = None  # BUY | SELL
-    setup: str | None = None  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2
+    setup: str | None = None  # SMC only
     timeframe: str | None = None  # DAILY | WEEKLY | MONTHLY
     sector: str | None = None
     min_confidence: float | None = Field(default=None, ge=0, le=100)
@@ -320,7 +320,7 @@ class SmcSymbolOut(SmcResultOut):
 # Backtesting
 # ---------------------------------------------------------------------------
 class BacktestRequest(BaseModel):
-    strategy: str = "all"  # UC1 | UC2 | DC1 | DC2 | UR1 | DR1 | UR2 | DR2 | all
+    strategy: str = "all"  # SMC | all
     start_date: date | None = None
     end_date: date | None = None
     tickers: list[str] | None = None

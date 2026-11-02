@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
 import type { ChartAnnotation, MacroFlag, SmcResult, SmcScan, SmcSymbol } from "@/lib/types";
 import { DemoBanner } from "@/components/DemoBanner";
+import { Collapsible } from "@/components/Collapsible";
 import { RefreshButton } from "@/components/RefreshButton";
 import { useAuth } from "@/lib/auth";
 
@@ -425,14 +426,15 @@ export default function HomePage() {
               {detail.demo && <DemoBanner />}
 
               {/* The plain-text verdict — the exact block from the brief. */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                <div className="mb-2 text-[11px] uppercase tracking-wide text-slate-500">
-                  Analysis output
-                </div>
+              <Collapsible
+                title="Analysis output"
+                subtitle="the plain-text block from the brief"
+                defaultOpen
+              >
                 <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-slate-200">
                   {detail.text}
                 </pre>
-              </div>
+              </Collapsible>
 
               {/* Live price versus the entry. Display only: the levels never move. */}
               {detail.live?.available && (
@@ -478,23 +480,26 @@ export default function HomePage() {
                 </div>
               )}
 
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-                <div className="mb-2 flex items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-semibold">Daily structure (1D)</h3>
-                  <span className="text-[11px] text-slate-500">break of structure + gap</span>
-                </div>
+              <Collapsible
+                title="Daily structure (1D)"
+                subtitle="break of structure + fair value gap"
+                defaultOpen
+              >
                 <PriceChart bars={detail.daily_bars} annotations={annotations} />
                 <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
                   The shaded band is the 1D fair value gap behind the break; the dashed lines are
                   the entry and take-profit, the solid red line the stop. All candles are closed, so
                   nothing here repaints.
                 </p>
-              </div>
+              </Collapsible>
 
               {/* The refinement chart — the clock the levels were actually read on. */}
               {/* What could invalidate this pick. A gap is killed by a surprise, not by time. */}
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-                <h3 className="text-sm font-semibold">What to look out for</h3>
+              <Collapsible
+                title="What to look out for"
+                subtitle="scheduled events that could invalidate the pick"
+                defaultOpen={Boolean(detail.macro_flags?.length)}
+              >
                 {detail.macro_flags && detail.macro_flags.length > 0 ? (
                   <ul className="mt-2 space-y-2">
                     {detail.macro_flags.map((flag) => (
@@ -527,18 +532,14 @@ export default function HomePage() {
                   These are scheduled risks, not opinions: a high-importance print or an earnings
                   report can gap the open straight through the entry or the stop.
                 </p>
-              </div>
+              </Collapsible>
 
               {detail.refinement_bars.length > 0 ? (
-                <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-                  <div className="mb-2 flex items-baseline justify-between gap-2">
-                    <h3 className="text-sm font-semibold">
-                      Refinement ({detail.refinement_timeframe ?? "4H"})
-                    </h3>
-                    <span className="text-[11px] text-slate-500">
-                      {detail.refinement_bars.length} candles · entry, stop and target
-                    </span>
-                  </div>
+                <Collapsible
+                  title={`Refinement (${detail.refinement_timeframe ?? "4H"})`}
+                  subtitle={`${detail.refinement_bars.length} candles · entry, stop and target`}
+                  defaultOpen
+                >
                   <PriceChart
                     bars={refinementSeries(detail)}
                     annotations={levelsFor(detail)}
@@ -547,7 +548,7 @@ export default function HomePage() {
                     The entry, stop and target on the refinement clock. The entry sits at the gap&apos;s
                     50% mean threshold, the stop beyond the structural swing that created the gap.
                   </p>
-                </div>
+                </Collapsible>
               ) : (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs leading-relaxed text-amber-200">
                   <strong>No trade.</strong> No 4-hour candles are stored, and the entry, stop
