@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
-import type { ChartAnnotation, SmcResult, SmcScan, SmcSymbol } from "@/lib/types";
+import type { ChartAnnotation, MacroFlag, SmcResult, SmcScan, SmcSymbol } from "@/lib/types";
 import { DemoBanner } from "@/components/DemoBanner";
 import { RefreshButton } from "@/components/RefreshButton";
 import { useAuth } from "@/lib/auth";
@@ -163,6 +163,26 @@ function levelsFor(detail: SmcSymbol): ChartAnnotation[] {
   return annotationsFor(detail).filter((a) => a.kind === "level");
 }
 
+/** Small badge listing what could invalidate a pick. */
+function WatchFlag({ flags }: { flags?: MacroFlag[] }) {
+  if (!flags || flags.length === 0) {
+    return <span className="text-[11px] text-slate-600">—</span>;
+  }
+  const high = flags.some((f) => f.importance === "high");
+  return (
+    <span
+      title={flags.map((f) => `${f.when} · ${f.title}`).join("\n")}
+      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${
+        high
+          ? "border-amber-500/40 bg-amber-500/5 text-amber-200"
+          : "border-slate-700 bg-slate-800/40 text-slate-300"
+      }`}
+    >
+      ⚠ {flags.length}
+    </span>
+  );
+}
+
 export default function HomePage() {
   const { isAdmin } = useAuth();
   const [scan, setScan] = useState<SmcScan | null>(null);
@@ -314,6 +334,7 @@ export default function HomePage() {
                   <th className="px-3 py-3">Stop</th>
                   <th className="px-3 py-3">Take profit</th>
                   <th className="px-3 py-3">R:R</th>
+                  <th className="px-3 py-3">Watch</th>
                 </tr>
               </thead>
               <tbody>
@@ -354,6 +375,9 @@ export default function HomePage() {
                     </td>
                     <td className="px-3 py-3 font-mono text-xs">
                       {row.risk_reward != null ? `1:${row.risk_reward.toFixed(2)}` : "n/a"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <WatchFlag flags={row.macro_flags} />
                     </td>
                   </tr>
                 ))}
@@ -468,6 +492,43 @@ export default function HomePage() {
               </div>
 
               {/* The refinement chart — the clock the levels were actually read on. */}
+              {/* What could invalidate this pick. A gap is killed by a surprise, not by time. */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <h3 className="text-sm font-semibold">What to look out for</h3>
+                {detail.macro_flags && detail.macro_flags.length > 0 ? (
+                  <ul className="mt-2 space-y-2">
+                    {detail.macro_flags.map((flag) => (
+                      <li
+                        key={`${flag.kind}-${flag.when}-${flag.title}`}
+                        className={`rounded-lg border px-3 py-2 text-xs leading-relaxed ${
+                          flag.importance === "high"
+                            ? "border-amber-500/40 bg-amber-500/5 text-amber-100"
+                            : "border-slate-700 bg-slate-950/40 text-slate-300"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-baseline gap-x-2">
+                          <span className="font-medium">{flag.title}</span>
+                          <span className="font-mono text-[11px] text-slate-400">{flag.when}</span>
+                          <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                            {flag.kind === "earnings" ? "earnings" : flag.importance}
+                          </span>
+                        </div>
+                        {flag.impact && <p className="mt-1 text-slate-400">{flag.impact}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-400">
+                    Nothing scheduled in the next 7 days that would obviously invalidate this
+                    pick — but the gap is only good while price respects it.
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] text-slate-500">
+                  These are scheduled risks, not opinions: a high-importance print or an earnings
+                  report can gap the open straight through the entry or the stop.
+                </p>
+              </div>
+
               {detail.refinement_bars.length > 0 ? (
                 <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-3">
                   <div className="mb-2 flex items-baseline justify-between gap-2">

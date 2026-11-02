@@ -286,8 +286,37 @@ def _do_refresh(db, user_id: int) -> dict:
     data_service.ingest_earnings(
         db, macro, tickers, today - timedelta(days=15), today + timedelta(days=CALENDAR_DAYS)
     )
-    _set_progress("generating signals")
-    counts = signal_service.generate_signals(db, market, macro)
+    # History is the SMC screen itself: run it once here so a refresh records the
+    # day's picks without waiting for someone to open the page. The SMA flow engine
+    # that used to run here is retired, so History cannot show two different
+    # strategies side by side.
+    _set_progress("running the SMC screen and storing its picks")
+    try:
+        from . import smc_service
+
+        smc_service.clear_cache()
+        screen = smc_service.scan(db, market, limit=None, refresh=True)
+        # The SMA flow engine no longer runs, so any of its rows are leftovers.
+        # History must show one strategy, not two.
+        from ..core.constants import SETUP_SMC
+
+        # Signal is imported at module level; re-importing it here would shadow it
+        # and break the earlier query in this function.
+        retired = (
+            db.query(Signal)
+            .filter(Signal.setup != SETUP_SMC)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        counts = {
+            "picks": screen.get("tradeable", 0),
+            "screened": screen.get("scanned", 0),
+            "retired": retired,
+        }
+    except Exception as exc:  # pragma: no cover - a screen failure must not kill the refresh
+        logger.warning("SMC screen failed during refresh: %s", exc)
+        warnings.append(f"The SMC screen could not run after the download: {exc}")
+        counts = {"picks": 0, "screened": 0}
     # Replay older picks so History can show whether they worked out.
     _set_progress("scoring past picks")
     outcomes = outcome_service.update_outcomes(db)

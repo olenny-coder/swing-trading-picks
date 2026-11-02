@@ -59,9 +59,12 @@ export default function HistoryPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold sm:text-2xl">Signal History</h1>
+        <h1 className="text-xl font-semibold sm:text-2xl">SMC pick history</h1>
         <p className="text-sm text-slate-400">
-          Every stored pick for the selected interval, with its result once it has resolved.
+          Every setup the screener raised, and what price actually did afterwards. A pick is scored
+          against the daily bars that followed it: whichever of the stop or the take-profit is
+          touched first settles it, so a <span className="text-red-300">stop hit</span> is a real
+          loss rather than an opinion.
         </p>
       </div>
 

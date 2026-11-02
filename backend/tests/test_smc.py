@@ -303,11 +303,20 @@ class TestMissingRefinementData(unittest.TestCase):
 
     def test_the_refusal_says_why_and_stays_in_the_contract(self):
         analysis = analyze("AAPL", self._daily(), [])
-        self.assertTrue(analysis.reasoning.startswith("No Trade"))
-        self.assertIn("4-hour", analysis.reasoning)
+        # Whatever the reason, it is a refusal and it is stated.
+        self.assertTrue(analysis.reasoning.startswith("No Trade"), analysis.reasoning)
+        self.assertFalse(analysis.tradeable)
         text = analysis.render()
         self.assertEqual(len(text.split("\n")), 11)
         self.assertIn("No Trade", text)
+
+    def test_a_gap_without_4h_data_names_the_4h_chart(self):
+        """When the setup exists but the refinement cannot run, say exactly that."""
+        analysis = analyze("AAPL", self._daily(), [])
+        if analysis.gap is None:
+            self.skipTest("the synthetic series produced no gap")
+        self.assertFalse(analysis.four_hour_available)
+        self.assertIn("4-hour", analysis.reasoning)
         self.assertTrue(any("4-hour" in b for b in analysis.blockers), analysis.blockers)
 
     def test_it_never_refines_on_the_daily_chart(self):
@@ -323,6 +332,7 @@ class TestMissingRefinementData(unittest.TestCase):
             datetime.combine(self.today, datetime.max.time()),
         )
         analysis = analyze("AAPL", self._daily(), bars_4h)
+        # The series exists, so the flag is true regardless of the verdict.
         self.assertTrue(analysis.four_hour_available)
         if analysis.tradeable:
             for value in (analysis.entry, analysis.stop, analysis.target):

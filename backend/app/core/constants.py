@@ -16,7 +16,13 @@ SETUP_DR1 = "DR1"  # early downside reversal off a majority flush
 SETUP_UR2 = "UR2"  # double-top reversal (bearish)
 SETUP_DR2 = "DR2"  # double-bottom reversal (bullish)
 
+#: The live strategy: a 1D break of structure with a fair value gap behind it,
+#: refined on the 4-hour chart. Picks are stored under this setup so History shows
+#: exactly what the screener raised.
+SETUP_SMC = "SMC"
+
 SETUPS = (
+    SETUP_SMC,
     SETUP_UC1, SETUP_UC2, SETUP_DC1, SETUP_DC2,
     SETUP_UR1, SETUP_DR1, SETUP_UR2, SETUP_DR2,
 )
@@ -25,6 +31,7 @@ CONTINUATION_SETUPS = (SETUP_UC1, SETUP_UC2, SETUP_DC1, SETUP_DC2)
 REVERSAL_SETUPS = (SETUP_UR1, SETUP_DR1, SETUP_UR2, SETUP_DR2)
 
 DIRECTION_BY_SETUP: dict[str, str] = {
+    # Direction is decided per pick for SMC (the break of structure sets it).
     SETUP_UC1: SIGNAL_BUY,
     SETUP_UC2: SIGNAL_BUY,
     SETUP_DC1: SIGNAL_SELL,

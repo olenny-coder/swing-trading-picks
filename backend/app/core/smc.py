@@ -516,6 +516,10 @@ def analyze(
     """
     symbol = symbol.upper().strip()
     analysis = SmcAnalysis(symbol=symbol)
+    # Truthful from the start: this records whether the 4-hour series *exists*, not
+    # how far the analysis got before stopping.
+    refinement = refinement or []
+    analysis.four_hour_available = len(refinement) >= MIN_REFINEMENT_BARS
 
     if len(daily) < MIN_DAILY_BARS:
         analysis.reasoning = (

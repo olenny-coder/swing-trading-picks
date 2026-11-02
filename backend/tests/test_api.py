@@ -141,7 +141,11 @@ class TestAPI(unittest.TestCase):
             time.sleep(1)
         self.assertIsNotNone(result, "refresh did not finish in time")
         self.assertGreater(result["bars"], 0)
-        self.assertGreater(result["signals"]["total"], 0)
+        # The refresh now runs the SMC screen and stores its picks, rather than the
+        # retired SMA flow engine.
+        self.assertIn("screened", result["signals"])
+        self.assertIn("picks", result["signals"])
+        self.assertGreater(result["signals"]["screened"], 0)
 
 
 if __name__ == "__main__":

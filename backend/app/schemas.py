@@ -279,6 +279,8 @@ class SmcResultOut(BaseModel):
     four_hour_available: bool = False
     #: Which chart the entry, stop and target were refined on: "4H" or "1D".
     refinement_timeframe: str = "4H"
+    #: Scheduled events that could invalidate the pick (macro, earnings).
+    macro_flags: list = []
     price: float | None = None
     as_of: str | None = None
     bos: dict | None = None

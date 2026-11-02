@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import date, datetime, time, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -436,6 +437,137 @@ class TestSmcApi(unittest.TestCase):
                     if phrase in body:
                         offenders.append(f"{name}: {phrase}")
         self.assertEqual(offenders, [], f"stale copy still shipping: {offenders}")
+
+    def test_history_is_the_smc_screen(self):
+        """Picks the screen raises must become the history the tab shows."""
+        from app.database import SessionLocal
+        from app.core.constants import SETUP_SMC
+        from app.models import Signal
+        from app.providers.mock_provider import MockMarketDataProvider
+        from app.services import smc_service
+
+        db = SessionLocal()
+        try:
+            screen = smc_service.scan(db, MockMarketDataProvider(), limit=None, refresh=True)
+            stored = db.query(Signal).filter(Signal.setup == SETUP_SMC).all()
+            if screen["tradeable"]:
+                self.assertTrue(stored, "a tradeable screen must persist picks")
+            for row in stored:
+                self.assertIsNotNone(row.entry)
+                self.assertIsNotNone(row.stop)
+                self.assertIsNotNone(row.target)
+                self.assertIn(row.type, ("BUY", "SELL"))
+                self.assertGreater(row.confidence, 0)
+        finally:
+            db.close()
+
+    def test_the_response_model_does_not_strip_macro_flags(self):
+        """Caught twice before: a field computed but missing from the schema vanishes."""
+        from app.schemas import SmcResultOut, SmcSymbolOut
+
+        self.assertIn("macro_flags", SmcResultOut.model_fields)
+        self.assertIn("macro_flags", SmcSymbolOut.model_fields)
+        self.assertIn("refinement_timeframe", SmcResultOut.model_fields)
+        self.assertIn("live", SmcSymbolOut.model_fields)
+
+    def test_every_row_carries_a_macro_flags_key(self):
+        """The screen always answers "what could invalidate this", even if empty."""
+        from app.database import SessionLocal
+        from app.providers.mock_provider import MockMarketDataProvider
+        from app.services import smc_service
+
+        db = SessionLocal()
+        try:
+            screen = smc_service.scan(db, MockMarketDataProvider(), limit=None, refresh=True)
+            self.assertTrue(screen["results"], "the screen should return rows")
+            for row in screen["results"]:
+                self.assertIn("macro_flags", row)
+                self.assertIsInstance(row["macro_flags"], list)
+        finally:
+            db.close()
+
+    def test_flags_find_earnings_and_scheduled_macro(self):
+        """A pick reports its own earnings date and the calendar risk around it."""
+        from types import SimpleNamespace
+
+        from app.database import SessionLocal
+        from app.models import EarningsEvent, MacroEvent
+        from app.services import smc_service
+
+        db = SessionLocal()
+        try:
+            anchor = date.today()
+            db.query(EarningsEvent).delete()
+            db.query(MacroEvent).delete()
+            db.add(
+                EarningsEvent(
+                    ticker="AAPL",
+                    report_date=anchor + timedelta(days=3),
+                    fiscal_quarter="Q4",
+                )
+            )
+            db.add(
+                MacroEvent(
+                    title="CPI (YoY)",
+                    datetime=datetime.combine(anchor + timedelta(days=2), time(8, 30)),
+                    importance="high",
+                    sentiment="negative",
+                    category="inflation",
+                )
+            )
+            db.commit()
+
+            flags = smc_service.macro_flags_for(
+                db, [SimpleNamespace(symbol="AAPL")], anchor
+            )["AAPL"]
+            kinds = {f["kind"] for f in flags}
+            self.assertIn("earnings", kinds)
+            self.assertIn("macro", kinds)
+            for flag in flags:
+                self.assertIn("title", flag)
+                self.assertIn("when", flag)
+                self.assertIn("impact", flag)
+        finally:
+            db.query(EarningsEvent).delete()
+            db.query(MacroEvent).delete()
+            db.commit()
+            db.close()
+
+    def test_flags_name_the_next_risk_when_the_week_is_empty(self):
+        """An empty calendar must still say what is coming, not nothing."""
+        from types import SimpleNamespace
+
+        from app.database import SessionLocal
+        from app.models import EarningsEvent, MacroEvent
+        from app.services import smc_service
+
+        db = SessionLocal()
+        try:
+            anchor = date.today()
+            db.query(EarningsEvent).delete()
+            db.query(MacroEvent).delete()
+            db.add(
+                MacroEvent(
+                    title="FOMC statement",
+                    datetime=datetime.combine(anchor + timedelta(days=30), time(19, 0)),
+                    importance="high",
+                    sentiment="neutral",
+                    category="rates",
+                )
+            )
+            db.commit()
+
+            flags = smc_service.macro_flags_for(
+                db, [SimpleNamespace(symbol="AAPL")], anchor
+            )["AAPL"]
+            self.assertTrue(flags, "expected the next scheduled risk")
+            self.assertEqual(flags[0]["kind"], "macro_next")
+            self.assertIn("FOMC", flags[0]["title"])
+        finally:
+            db.query(EarningsEvent).delete()
+            db.query(MacroEvent).delete()
+            db.commit()
+            db.close()
 
     def test_a_refresh_invalidates_the_scan_cache(self):
         """Fresh data must not be masked by the cached scan."""

@@ -59,12 +59,18 @@ export interface AccuracyResponse {
   by_setup: SetupAccuracy[];
 }
 
-/** SMA 20/50 flow-system setups. */
-export type SetupCode = "UC1" | "UC2" | "DC1" | "DC2" | "UR1" | "DR1" | "UR2" | "DR2";
+/** The live strategy first, then the retired SMA 20/50 flow-system setups. */
+export type SetupCode =
+  | "SMC"
+  | "UC1" | "UC2" | "DC1" | "DC2" | "UR1" | "DR1" | "UR2" | "DR2";
 
-export const SETUP_CODES: SetupCode[] = ["UC1", "UC2", "DC1", "DC2", "UR1", "DR1", "UR2", "DR2"];
+export const SETUP_CODES: SetupCode[] = [
+  "SMC",
+  "UC1", "UC2", "DC1", "DC2", "UR1", "DR1", "UR2", "DR2",
+];
 
 export const SETUP_LABELS: Record<SetupCode, string> = {
+  SMC: "SMC — 1D break of structure + fair value gap, 4H refinement",
   UC1: "Bullish continuation (shallow pullback)",
   UC2: "Bullish continuation (deep pullback)",
   DC1: "Bearish continuation (shallow pullback)",
@@ -285,6 +291,16 @@ export interface ChartAnnotation {
 // SMC multi-timeframe analysis (1D structure, 4H refinement)
 // ---------------------------------------------------------------------------
 
+/** Something scheduled that could invalidate a pick. */
+export interface MacroFlag {
+  kind: "macro" | "macro_next" | "earnings";
+  title: string;
+  when: string;
+  importance: string;
+  sentiment?: string;
+  impact?: string;
+}
+
 export interface SmcResult {
   symbol: string;
   /** The plain-text block from the brief. This is the deliverable. */
@@ -304,6 +320,8 @@ export interface SmcResult {
   four_hour_available: boolean;
   /** Which chart the levels were refined on: "4H" or "1D". */
   refinement_timeframe?: string;
+  /** Scheduled events that could invalidate this pick. */
+  macro_flags?: MacroFlag[];
   price: number | null;
   as_of: string | null;
   bos: Record<string, unknown> | null;
